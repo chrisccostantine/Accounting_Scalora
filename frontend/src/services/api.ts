@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+const runtimeApiUrl = window.__SCALORA_ENV__?.VITE_API_URL;
+
 export interface ApiResponse<T> {
   success: boolean;
   message: string;
@@ -8,7 +10,7 @@ export interface ApiResponse<T> {
 }
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api'
+  baseURL: runtimeApiUrl || import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
 });
 
 api.interceptors.request.use((config) => {
