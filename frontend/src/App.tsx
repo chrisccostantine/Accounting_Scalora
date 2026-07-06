@@ -3,6 +3,7 @@ import { AppShell } from './components/AppShell';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ClientsPage } from './pages/ClientsPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { AdvancesPage } from './pages/AdvancesPage';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { IncomePage } from './pages/IncomePage';
 import { LoginPage } from './pages/LoginPage';
@@ -19,6 +20,7 @@ export function App() {
           <Route path="clients" element={<ClientsPage />} />
           <Route path="income" element={<IncomePage />} />
           <Route path="expenses" element={<ExpensesPage />} />
+          <Route path="advances" element={<AdvancesPage />} />
           <Route path="reports" element={<ReportsPage />} />
         </Route>
       </Route>

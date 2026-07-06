@@ -48,6 +48,34 @@ export interface Expense {
   notes?: string;
 }
 
+export interface AdvanceRepayment {
+  id: string;
+  advanceId: string;
+  amount: number;
+  currency: string;
+  date: string;
+  paymentMethod: PaymentMethod;
+  notes?: string;
+}
+
+export interface OwnerAdvance {
+  id: string;
+  title: string;
+  amount: number;
+  currency: string;
+  date: string;
+  source?: string;
+  plannedInstallments?: number;
+  installmentAmount?: number;
+  nextDueDate?: string;
+  notes?: string;
+  status: 'OPEN' | 'PAID';
+  computedStatus?: 'OPEN' | 'PAID';
+  repaid: number;
+  outstanding: number;
+  repayments: AdvanceRepayment[];
+}
+
 export interface Paginated<T> {
   items: T[];
   pagination: { page: number; limit: number; total: number; pages: number };

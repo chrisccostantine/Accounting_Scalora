@@ -10,6 +10,7 @@ import { authRouter } from './routes/auth.routes.js';
 import { clientRouter } from './routes/client.routes.js';
 import { incomeRouter } from './routes/income.routes.js';
 import { expenseRouter } from './routes/expense.routes.js';
+import { advanceRouter } from './routes/advance.routes.js';
 import { reportRouter } from './routes/report.routes.js';
 
 export const app = express();
@@ -25,5 +26,6 @@ app.use('/api', requireAuth, reportRouter);
 app.use('/api/clients', requireAuth, clientRouter);
 app.use('/api/income', requireAuth, incomeRouter);
 app.use('/api/expenses', requireAuth, expenseRouter);
+app.use('/api/advances', requireAuth, advanceRouter);
 app.use((_req, res) => fail(res, 'Route not found', 404));
 app.use(errorHandler);

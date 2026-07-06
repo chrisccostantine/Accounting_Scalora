@@ -6,7 +6,7 @@ import type { Client, Expense, Income } from '../types';
 import { labelize, money } from '../utils/format';
 
 interface Dashboard {
-  cards: { totalIncome: number; totalExpenses: number; netProfit: number; activeClients: number; collected: number; pending: number; expectedRevenue: number; collectionRate: number; profitMargin: number };
+  cards: { totalIncome: number; totalExpenses: number; netProfit: number; activeClients: number; collected: number; pending: number; expectedRevenue: number; collectionRate: number; profitMargin: number; ownerAdvanceOutstanding: number };
   topClients: { client: string; amount: number }[];
   topExpenseCategories: { category: string; amount: number }[];
   attention: string[];
@@ -27,6 +27,7 @@ export function DashboardPage() {
     ['Pending Payments', money(data.cards.pending)],
     ['Expenses This Month', money(data.cards.totalExpenses)],
     ['Net Profit', money(data.cards.netProfit)],
+    ['Owner Money Owed', money(data.cards.ownerAdvanceOutstanding)],
     ['Active Clients', data.cards.activeClients]
   ];
 

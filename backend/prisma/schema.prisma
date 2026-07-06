@@ -57,6 +57,11 @@ enum ExpenseCategory {
   OTHER
 }
 
+enum AdvanceStatus {
+  OPEN
+  PAID
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -130,4 +135,42 @@ model Expense {
   @@index([date])
   @@index([frequency])
   @@map("expenses")
+}
+
+model OwnerAdvance {
+  id                 String             @id @default(cuid())
+  title              String
+  amount             Decimal            @db.Decimal(12, 2)
+  currency           String             @default("USD")
+  date               DateTime
+  source             String?
+  plannedInstallments Int?
+  installmentAmount  Decimal?           @db.Decimal(12, 2)
+  nextDueDate         DateTime?
+  notes              String?
+  status             AdvanceStatus      @default(OPEN)
+  repayments         AdvanceRepayment[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([date])
+  @@index([status])
+  @@map("owner_advances")
+}
+
+model AdvanceRepayment {
+  id             String        @id @default(cuid())
+  advanceId      String
+  advance        OwnerAdvance  @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+  amount         Decimal       @db.Decimal(12, 2)
+  currency       String        @default("USD")
+  date           DateTime
+  paymentMethod  PaymentMethod
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([advanceId])
+  @@index([date])
+  @@map("advance_repayments")
 }

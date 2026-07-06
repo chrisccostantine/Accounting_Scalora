@@ -52,14 +52,15 @@ export async function dashboard(req: Request, res: Response) {
   const totals = await totalsBetween(start, end);
   const incomeActiveInRange: Prisma.IncomeWhereInput = { OR: [{ frequency: { in: ['MONTHLY', 'YEARLY'] }, date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }] };
   const expenseActiveInRange: Prisma.ExpenseWhereInput = { OR: [{ frequency: { in: ['MONTHLY', 'YEARLY'] }, date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }] };
-  const [activeClients, recentIncome, recentExpenses, recentClients, billableClients, monthIncome, monthExpenses] = await Promise.all([
+  const [activeClients, recentIncome, recentExpenses, recentClients, billableClients, monthIncome, monthExpenses, advances] = await Promise.all([
     prisma.client.count({ where: { status: 'ACTIVE' } }),
     prisma.income.findMany({ include: { client: true }, orderBy: { date: 'desc' }, take: 5 }),
     prisma.expense.findMany({ orderBy: { date: 'desc' }, take: 5 }),
     prisma.client.findMany({ orderBy: { createdAt: 'desc' }, take: 5 }),
     prisma.client.findMany({ where: { status: 'ACTIVE', contractStartDate: { lt: end } }, select: { id: true, name: true, monthlyFee: true, contractStartDate: true, billingFrequency: true } }),
     prisma.income.findMany({ where: incomeActiveInRange, include: { client: true } }),
-    prisma.expense.findMany({ where: expenseActiveInRange })
+    prisma.expense.findMany({ where: expenseActiveInRange }),
+    prisma.ownerAdvance.findMany({ where: { status: 'OPEN' }, include: { repayments: true } })
   ]);
   const collected = totals.income;
   const expectedRevenue = expectedClientFees(billableClients, start, end);
@@ -68,14 +69,19 @@ export async function dashboard(req: Request, res: Response) {
   const profitMargin = collected > 0 ? ((collected - totals.expenses) / collected) * 100 : 0;
   const topClients = totalBy(monthIncome, (item) => item.client?.name ?? 'Unknown', start, end).sort((a, b) => b.amount - a.amount).slice(0, 5).map((item) => ({ client: item.key, amount: item.amount }));
   const topExpenseCategories = totalBy(monthExpenses, (item) => item.category, start, end).sort((a, b) => b.amount - a.amount).slice(0, 5).map((item) => ({ category: item.key, amount: item.amount }));
+  const ownerAdvanceOutstanding = advances.reduce((total, advance) => {
+    const repaid = advance.repayments.reduce((sum, repayment) => sum + money(repayment.amount), 0);
+    return total + Math.max(0, money(advance.amount) - repaid);
+  }, 0);
   const attention = [
     ...(pending > 0 ? [`${money(pending).toLocaleString('en-US')} still pending this month`] : []),
+    ...(ownerAdvanceOutstanding > 0 ? [`${money(ownerAdvanceOutstanding).toLocaleString('en-US')} owed back to owner`] : []),
     ...(totals.expenses > collected ? ['Expenses are higher than collected income this month'] : []),
     ...(activeClients === 0 ? ['No active clients yet'] : [])
   ];
   const charts = await chartData(new Date().getFullYear());
   return ok(res, 'Dashboard loaded', {
-    cards: { totalIncome: totals.income, totalExpenses: totals.expenses, netProfit: totals.income - totals.expenses, activeClients, collected, pending, expectedRevenue, collectionRate, profitMargin },
+    cards: { totalIncome: totals.income, totalExpenses: totals.expenses, netProfit: totals.income - totals.expenses, activeClients, collected, pending, expectedRevenue, collectionRate, profitMargin, ownerAdvanceOutstanding },
     topClients,
     topExpenseCategories,
     attention,

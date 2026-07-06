@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { BarChart3, CreditCard, LayoutDashboard, LogOut, ReceiptText, Users } from 'lucide-react';
+import { BarChart3, CreditCard, HandCoins, LayoutDashboard, LogOut, ReceiptText, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const nav = [
@@ -7,6 +7,7 @@ const nav = [
   { to: '/clients', label: 'Clients', icon: Users },
   { to: '/income', label: 'Income', icon: CreditCard },
   { to: '/expenses', label: 'Expenses', icon: ReceiptText },
+  { to: '/advances', label: 'Advances', icon: HandCoins },
   { to: '/reports', label: 'Reports', icon: BarChart3 }
 ];
 
