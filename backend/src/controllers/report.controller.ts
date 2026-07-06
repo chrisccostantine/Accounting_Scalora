@@ -50,18 +50,35 @@ function expectedClientFees(clients: Array<Pick<Client, 'monthlyFee' | 'contract
 export async function dashboard(req: Request, res: Response) {
   const { start, end } = monthRange();
   const totals = await totalsBetween(start, end);
-  const [activeClients, recentIncome, recentExpenses, recentClients, billableClients] = await Promise.all([
+  const incomeActiveInRange: Prisma.IncomeWhereInput = { OR: [{ frequency: { in: ['MONTHLY', 'YEARLY'] }, date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }] };
+  const expenseActiveInRange: Prisma.ExpenseWhereInput = { OR: [{ frequency: { in: ['MONTHLY', 'YEARLY'] }, date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }] };
+  const [activeClients, recentIncome, recentExpenses, recentClients, billableClients, monthIncome, monthExpenses] = await Promise.all([
     prisma.client.count({ where: { status: 'ACTIVE' } }),
     prisma.income.findMany({ include: { client: true }, orderBy: { date: 'desc' }, take: 5 }),
     prisma.expense.findMany({ orderBy: { date: 'desc' }, take: 5 }),
     prisma.client.findMany({ orderBy: { createdAt: 'desc' }, take: 5 }),
-    prisma.client.findMany({ where: { status: 'ACTIVE', contractStartDate: { lt: end } }, select: { monthlyFee: true, contractStartDate: true, billingFrequency: true } })
+    prisma.client.findMany({ where: { status: 'ACTIVE', contractStartDate: { lt: end } }, select: { id: true, name: true, monthlyFee: true, contractStartDate: true, billingFrequency: true } }),
+    prisma.income.findMany({ where: incomeActiveInRange, include: { client: true } }),
+    prisma.expense.findMany({ where: expenseActiveInRange })
   ]);
   const collected = totals.income;
-  const pending = Math.max(0, expectedClientFees(billableClients, start, end) - collected);
+  const expectedRevenue = expectedClientFees(billableClients, start, end);
+  const pending = Math.max(0, expectedRevenue - collected);
+  const collectionRate = expectedRevenue > 0 ? Math.min(100, (collected / expectedRevenue) * 100) : 100;
+  const profitMargin = collected > 0 ? ((collected - totals.expenses) / collected) * 100 : 0;
+  const topClients = totalBy(monthIncome, (item) => item.client?.name ?? 'Unknown', start, end).sort((a, b) => b.amount - a.amount).slice(0, 5).map((item) => ({ client: item.key, amount: item.amount }));
+  const topExpenseCategories = totalBy(monthExpenses, (item) => item.category, start, end).sort((a, b) => b.amount - a.amount).slice(0, 5).map((item) => ({ category: item.key, amount: item.amount }));
+  const attention = [
+    ...(pending > 0 ? [`${money(pending).toLocaleString('en-US')} still pending this month`] : []),
+    ...(totals.expenses > collected ? ['Expenses are higher than collected income this month'] : []),
+    ...(activeClients === 0 ? ['No active clients yet'] : [])
+  ];
   const charts = await chartData(new Date().getFullYear());
   return ok(res, 'Dashboard loaded', {
-    cards: { totalIncome: totals.income, totalExpenses: totals.expenses, netProfit: totals.income - totals.expenses, activeClients, collected, pending },
+    cards: { totalIncome: totals.income, totalExpenses: totals.expenses, netProfit: totals.income - totals.expenses, activeClients, collected, pending, expectedRevenue, collectionRate, profitMargin },
+    topClients,
+    topExpenseCategories,
+    attention,
     recentIncome,
     recentExpenses,
     recentClients,
@@ -109,13 +126,15 @@ export async function reports(req: Request, res: Response) {
       monthlyExpenses: totals.expenses,
       monthlyProfit: totals.income - totals.expenses,
       yearlyProfit: yearly.income - yearly.expenses,
+      profitMargin: totals.income > 0 ? ((totals.income - totals.expenses) / totals.income) * 100 : 0,
       averageMonthlyIncome: yearly.income / 12,
       averageMonthlyExpenses: yearly.expenses / 12
     },
     incomeByClient: byClient,
     topPayingClients: byClient.slice(0, 5),
     expensesByCategory: expensesByCategory.map((item) => ({ category: item.key, amount: item.amount })),
-    charts
+    charts,
+    monthlyBreakdown: charts.map((item) => ({ ...item, margin: item.income > 0 ? (item.profit / item.income) * 100 : 0 }))
   });
 }
 
