@@ -1,7 +1,7 @@
 export type ClientService = 'META_ADS' | 'TIKTOK_ADS' | 'GOOGLE_ADS' | 'SOCIAL_MEDIA_MANAGEMENT' | 'CONTENT_CREATION' | 'SHOPIFY_STORE' | 'WEBSITE_DEVELOPMENT' | 'WEB_APPLICATION' | 'MOBILE_APPLICATION' | 'BRANDING' | 'OTHER';
 export type ClientStatus = 'ACTIVE' | 'PAUSED' | 'COMPLETED';
 export type PaymentMethod = 'CASH' | 'BANK' | 'WHISH' | 'OMT' | 'TRANSFER' | 'OTHER';
-export type PaymentFrequency = 'ONE_TIME' | 'MONTHLY';
+export type PaymentFrequency = 'ONE_TIME' | 'MONTHLY' | 'YEARLY';
 export type ExpenseCategory = 'OFFICE' | 'SOFTWARE' | 'ADS' | 'FREELANCER' | 'EMPLOYEE' | 'INTERNET' | 'PHONE' | 'TRANSPORTATION' | 'EQUIPMENT' | 'UTILITIES' | 'MARKETING' | 'OTHER';
 
 export interface Client {
@@ -12,6 +12,7 @@ export interface Client {
   email?: string;
   service: ClientService;
   monthlyFee: number;
+  billingFrequency: PaymentFrequency;
   currency: string;
   status: ClientStatus;
   contractStartDate: string;

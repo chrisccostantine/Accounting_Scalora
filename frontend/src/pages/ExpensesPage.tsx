@@ -10,7 +10,7 @@ import type { Expense, ExpenseCategory, Paginated, PaymentFrequency, PaymentMeth
 import { isoDate, labelize, money } from '../utils/format';
 
 const methods: PaymentMethod[] = ['CASH', 'BANK', 'WHISH', 'OMT', 'TRANSFER', 'OTHER'];
-const frequencies: PaymentFrequency[] = ['ONE_TIME', 'MONTHLY'];
+const frequencies: PaymentFrequency[] = ['ONE_TIME', 'MONTHLY', 'YEARLY'];
 const categories: ExpenseCategory[] = ['OFFICE', 'SOFTWARE', 'ADS', 'FREELANCER', 'EMPLOYEE', 'INTERNET', 'PHONE', 'TRANSPORTATION', 'EQUIPMENT', 'UTILITIES', 'MARKETING', 'OTHER'];
 const schema = z.object({ title: z.string().min(1), amount: z.coerce.number().nonnegative(), currency: z.string().default('USD'), category: z.enum(categories as [ExpenseCategory, ...ExpenseCategory[]]), paymentMethod: z.enum(methods as [PaymentMethod, ...PaymentMethod[]]), frequency: z.enum(frequencies as [PaymentFrequency, ...PaymentFrequency[]]), date: z.string(), vendor: z.string().optional(), receiptNumber: z.string().optional(), notes: z.string().optional() });
 type FormValues = z.infer<typeof schema>;

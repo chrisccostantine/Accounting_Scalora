@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import type { ExpenseCategory, Income, Expense, Prisma } from '@prisma/client';
+import type { Client, ExpenseCategory, Income, Expense, PaymentFrequency, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { monthRange } from '../utils/date.js';
 import { ok } from '../utils/api.js';
@@ -11,13 +11,13 @@ async function totalsBetween(start: Date, end: Date, filters: { clientId?: strin
     prisma.income.findMany({
       where: {
         ...(filters.clientId ? { clientId: filters.clientId } : {}),
-        OR: [{ frequency: 'MONTHLY', date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
+        OR: [{ frequency: { in: ['MONTHLY', 'YEARLY'] }, date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
       }
     }),
     prisma.expense.findMany({
       where: {
         ...(filters.category ? { category: filters.category as ExpenseCategory } : {}),
-        OR: [{ frequency: 'MONTHLY', date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
+        OR: [{ frequency: { in: ['MONTHLY', 'YEARLY'] }, date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
       }
     })
   ]);
@@ -28,7 +28,7 @@ function sumForRange(items: Array<Pick<Income | Expense, 'amount' | 'date' | 'fr
   return items.reduce((total, item) => total + money(item.amount) * occurrencesInRange(item.date, item.frequency, start, end), 0);
 }
 
-function occurrencesInRange(date: Date, frequency: 'ONE_TIME' | 'MONTHLY', start: Date, end: Date) {
+function occurrencesInRange(date: Date, frequency: PaymentFrequency, start: Date, end: Date) {
   if (frequency === 'ONE_TIME') return date >= start && date < end ? 1 : 0;
 
   let cursor = new Date(Date.UTC(Math.max(date.getUTCFullYear(), start.getUTCFullYear()), 0, 1));
@@ -36,24 +36,29 @@ function occurrencesInRange(date: Date, frequency: 'ONE_TIME' | 'MONTHLY', start
   while (cursor < end) {
     const monthStart = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 1));
     const monthEnd = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
-    if (monthEnd > start && monthStart < end && date < monthEnd) count += 1;
+    const isAnniversaryMonth = frequency === 'YEARLY' ? cursor.getUTCMonth() === date.getUTCMonth() : true;
+    if (isAnniversaryMonth && monthEnd > start && monthStart < end && date < monthEnd) count += 1;
     cursor = monthEnd;
   }
   return count;
 }
 
+function expectedClientFees(clients: Array<Pick<Client, 'monthlyFee' | 'contractStartDate' | 'billingFrequency'>>, start: Date, end: Date) {
+  return clients.reduce((total, client) => total + money(client.monthlyFee) * occurrencesInRange(client.contractStartDate, client.billingFrequency, start, end), 0);
+}
+
 export async function dashboard(req: Request, res: Response) {
   const { start, end } = monthRange();
   const totals = await totalsBetween(start, end);
-  const [activeClients, recentIncome, recentExpenses, recentClients, expected] = await Promise.all([
+  const [activeClients, recentIncome, recentExpenses, recentClients, billableClients] = await Promise.all([
     prisma.client.count({ where: { status: 'ACTIVE' } }),
     prisma.income.findMany({ include: { client: true }, orderBy: { date: 'desc' }, take: 5 }),
     prisma.expense.findMany({ orderBy: { date: 'desc' }, take: 5 }),
     prisma.client.findMany({ orderBy: { createdAt: 'desc' }, take: 5 }),
-    prisma.client.aggregate({ where: { status: 'ACTIVE' }, _sum: { monthlyFee: true } })
+    prisma.client.findMany({ where: { status: 'ACTIVE', contractStartDate: { lt: end } }, select: { monthlyFee: true, contractStartDate: true, billingFrequency: true } })
   ]);
   const collected = totals.income;
-  const pending = Math.max(0, money(expected._sum.monthlyFee) - collected);
+  const pending = Math.max(0, expectedClientFees(billableClients, start, end) - collected);
   const charts = await chartData(new Date().getFullYear());
   return ok(res, 'Dashboard loaded', {
     cards: { totalIncome: totals.income, totalExpenses: totals.expenses, netProfit: totals.income - totals.expenses, activeClients, collected, pending },
@@ -81,11 +86,11 @@ export async function reports(req: Request, res: Response) {
   const { start, end } = month ? monthRange(year, month) : { start: new Date(Date.UTC(year, 0, 1)), end: new Date(Date.UTC(year + 1, 0, 1)) };
   const incomeWhere: Prisma.IncomeWhereInput = {
     ...(filters.clientId ? { clientId: filters.clientId } : {}),
-    OR: [{ frequency: 'MONTHLY', date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
+    OR: [{ frequency: { in: ['MONTHLY', 'YEARLY'] }, date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
   };
   const expenseWhere: Prisma.ExpenseWhereInput = {
     ...(filters.category ? { category: filters.category as ExpenseCategory } : {}),
-    OR: [{ frequency: 'MONTHLY', date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
+    OR: [{ frequency: { in: ['MONTHLY', 'YEARLY'] }, date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
   };
   const [totals, yearly, incomeRows, expenseRows, charts] = await Promise.all([
     totalsBetween(start, end, filters),

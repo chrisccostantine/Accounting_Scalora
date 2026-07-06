@@ -39,6 +39,7 @@ enum PaymentMethod {
 enum PaymentFrequency {
   ONE_TIME
   MONTHLY
+  YEARLY
 }
 
 enum ExpenseCategory {
@@ -74,6 +75,7 @@ model Client {
   email             String?
   service           ClientService
   monthlyFee        Decimal       @db.Decimal(12, 2)
+  billingFrequency  PaymentFrequency @default(MONTHLY)
   currency          String        @default("USD")
   status            ClientStatus  @default(ACTIVE)
   contractStartDate DateTime
@@ -84,6 +86,7 @@ model Client {
 
   @@index([status])
   @@index([service])
+  @@index([billingFrequency])
   @@map("clients")
 }
 
