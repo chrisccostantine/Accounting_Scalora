@@ -3,6 +3,10 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ok, pagination } from '../utils/api.js';
 
+function param(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value ?? '';
+}
+
 export async function listIncome(req: Request, res: Response) {
   const page = Number(req.query.page ?? 1);
   const limit = Number(req.query.limit ?? 10);
@@ -32,11 +36,11 @@ export async function createIncome(req: Request, res: Response) {
 }
 
 export async function updateIncome(req: Request, res: Response) {
-  const item = await prisma.income.update({ where: { id: req.params.id }, data: req.body, include: { client: true } });
+  const item = await prisma.income.update({ where: { id: param(req.params.id) }, data: req.body, include: { client: true } });
   return ok(res, 'Income updated', item);
 }
 
 export async function deleteIncome(req: Request, res: Response) {
-  await prisma.income.delete({ where: { id: req.params.id } }).catch(() => null);
+  await prisma.income.delete({ where: { id: param(req.params.id) } }).catch(() => null);
   return ok(res, 'Income deleted');
 }

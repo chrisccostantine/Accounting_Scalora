@@ -7,6 +7,10 @@ function cleanBody(body: Record<string, unknown>) {
   return { ...body, email: body.email === '' ? null : body.email };
 }
 
+function param(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value ?? '';
+}
+
 export async function listClients(req: Request, res: Response) {
   const page = Number(req.query.page ?? 1);
   const limit = Number(req.query.limit ?? 10);
@@ -35,17 +39,17 @@ export async function createClient(req: Request, res: Response) {
 }
 
 export async function updateClient(req: Request, res: Response) {
-  const client = await prisma.client.update({ where: { id: req.params.id }, data: cleanBody(req.body) });
+  const client = await prisma.client.update({ where: { id: param(req.params.id) }, data: cleanBody(req.body) as Prisma.ClientUpdateInput });
   return ok(res, 'Client updated', client);
 }
 
 export async function deleteClient(req: Request, res: Response) {
-  await prisma.client.delete({ where: { id: req.params.id } }).catch(() => null);
+  await prisma.client.delete({ where: { id: param(req.params.id) } }).catch(() => null);
   return ok(res, 'Client deleted');
 }
 
 export async function getClient(req: Request, res: Response) {
-  const client = await prisma.client.findUnique({ where: { id: req.params.id }, include: { income: true } });
+  const client = await prisma.client.findUnique({ where: { id: param(req.params.id) }, include: { income: true } });
   if (!client) return fail(res, 'Client not found', 404);
   return ok(res, 'Client loaded', client);
 }

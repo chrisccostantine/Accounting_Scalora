@@ -3,6 +3,10 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ok, pagination } from '../utils/api.js';
 
+function param(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value ?? '';
+}
+
 export async function listExpenses(req: Request, res: Response) {
   const page = Number(req.query.page ?? 1);
   const limit = Number(req.query.limit ?? 10);
@@ -31,11 +35,11 @@ export async function createExpense(req: Request, res: Response) {
 }
 
 export async function updateExpense(req: Request, res: Response) {
-  const item = await prisma.expense.update({ where: { id: req.params.id }, data: req.body });
+  const item = await prisma.expense.update({ where: { id: param(req.params.id) }, data: req.body });
   return ok(res, 'Expense updated', item);
 }
 
 export async function deleteExpense(req: Request, res: Response) {
-  await prisma.expense.delete({ where: { id: req.params.id } }).catch(() => null);
+  await prisma.expense.delete({ where: { id: param(req.params.id) } }).catch(() => null);
   return ok(res, 'Expense deleted');
 }
