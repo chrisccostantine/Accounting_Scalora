@@ -2,6 +2,11 @@ import axios from 'axios';
 
 const runtimeApiUrl = window.__SCALORA_ENV__?.VITE_API_URL;
 
+function normalizeApiUrl(url: string) {
+  const cleanUrl = url.replace(/\/$/, '');
+  return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   message: string;
@@ -10,7 +15,7 @@ export interface ApiResponse<T> {
 }
 
 export const api = axios.create({
-  baseURL: runtimeApiUrl || import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
+  baseURL: normalizeApiUrl(runtimeApiUrl || import.meta.env.VITE_API_URL || 'http://localhost:4000/api')
 });
 
 api.interceptors.request.use((config) => {
