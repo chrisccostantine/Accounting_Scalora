@@ -36,6 +36,11 @@ enum PaymentMethod {
   OTHER
 }
 
+enum PaymentFrequency {
+  ONE_TIME
+  MONTHLY
+}
+
 enum ExpenseCategory {
   OFFICE
   SOFTWARE
@@ -90,6 +95,7 @@ model Income {
   currency        String        @default("USD")
   date            DateTime
   paymentMethod   PaymentMethod
+  frequency       PaymentFrequency @default(ONE_TIME)
   referenceNumber String?
   description     String?
   invoiceNumber   String?
@@ -98,6 +104,7 @@ model Income {
 
   @@index([clientId])
   @@index([date])
+  @@index([frequency])
   @@map("income")
 }
 
@@ -108,6 +115,7 @@ model Expense {
   currency       String          @default("USD")
   category       ExpenseCategory
   paymentMethod  PaymentMethod
+  frequency      PaymentFrequency @default(ONE_TIME)
   date           DateTime
   vendor         String?
   receiptNumber  String?
@@ -117,5 +125,6 @@ model Expense {
 
   @@index([category])
   @@index([date])
+  @@index([frequency])
   @@map("expenses")
 }

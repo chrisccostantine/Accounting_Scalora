@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import type { ExpenseCategory, Income, Expense, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { monthRange } from '../utils/date.js';
 import { ok } from '../utils/api.js';
@@ -7,10 +8,38 @@ const money = (value: unknown) => Number(value ?? 0);
 
 async function totalsBetween(start: Date, end: Date, filters: { clientId?: string; category?: string } = {}) {
   const [income, expenses] = await Promise.all([
-    prisma.income.aggregate({ where: { date: { gte: start, lt: end }, ...(filters.clientId ? { clientId: filters.clientId } : {}) }, _sum: { amount: true } }),
-    prisma.expense.aggregate({ where: { date: { gte: start, lt: end }, ...(filters.category ? { category: filters.category as never } : {}) }, _sum: { amount: true } })
+    prisma.income.findMany({
+      where: {
+        ...(filters.clientId ? { clientId: filters.clientId } : {}),
+        OR: [{ frequency: 'MONTHLY', date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
+      }
+    }),
+    prisma.expense.findMany({
+      where: {
+        ...(filters.category ? { category: filters.category as ExpenseCategory } : {}),
+        OR: [{ frequency: 'MONTHLY', date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
+      }
+    })
   ]);
-  return { income: money(income._sum.amount), expenses: money(expenses._sum.amount) };
+  return { income: sumForRange(income, start, end), expenses: sumForRange(expenses, start, end) };
+}
+
+function sumForRange(items: Array<Pick<Income | Expense, 'amount' | 'date' | 'frequency'>>, start: Date, end: Date) {
+  return items.reduce((total, item) => total + money(item.amount) * occurrencesInRange(item.date, item.frequency, start, end), 0);
+}
+
+function occurrencesInRange(date: Date, frequency: 'ONE_TIME' | 'MONTHLY', start: Date, end: Date) {
+  if (frequency === 'ONE_TIME') return date >= start && date < end ? 1 : 0;
+
+  let cursor = new Date(Date.UTC(Math.max(date.getUTCFullYear(), start.getUTCFullYear()), 0, 1));
+  let count = 0;
+  while (cursor < end) {
+    const monthStart = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 1));
+    const monthEnd = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+    if (monthEnd > start && monthStart < end && date < monthEnd) count += 1;
+    cursor = monthEnd;
+  }
+  return count;
 }
 
 export async function dashboard(req: Request, res: Response) {
@@ -50,16 +79,25 @@ export async function reports(req: Request, res: Response) {
   const month = req.query.month ? Number(req.query.month) : undefined;
   const filters = { clientId: req.query.clientId ? String(req.query.clientId) : undefined, category: req.query.category ? String(req.query.category) : undefined };
   const { start, end } = month ? monthRange(year, month) : { start: new Date(Date.UTC(year, 0, 1)), end: new Date(Date.UTC(year + 1, 0, 1)) };
-  const whereDate = { date: { gte: start, lt: end } };
-  const [totals, yearly, incomeByClient, expensesByCategory, charts] = await Promise.all([
+  const incomeWhere: Prisma.IncomeWhereInput = {
+    ...(filters.clientId ? { clientId: filters.clientId } : {}),
+    OR: [{ frequency: 'MONTHLY', date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
+  };
+  const expenseWhere: Prisma.ExpenseWhereInput = {
+    ...(filters.category ? { category: filters.category as ExpenseCategory } : {}),
+    OR: [{ frequency: 'MONTHLY', date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }]
+  };
+  const [totals, yearly, incomeRows, expenseRows, charts] = await Promise.all([
     totalsBetween(start, end, filters),
     totalsBetween(new Date(Date.UTC(year, 0, 1)), new Date(Date.UTC(year + 1, 0, 1)), filters),
-    prisma.income.groupBy({ by: ['clientId'], where: { ...whereDate, ...(req.query.clientId ? { clientId: String(req.query.clientId) } : {}) }, _sum: { amount: true }, orderBy: { _sum: { amount: 'desc' } }, take: 10 }),
-    prisma.expense.groupBy({ by: ['category'], where: { ...whereDate, ...(req.query.category ? { category: String(req.query.category) as never } : {}) }, _sum: { amount: true }, orderBy: { _sum: { amount: 'desc' } } }),
+    prisma.income.findMany({ where: incomeWhere }),
+    prisma.expense.findMany({ where: expenseWhere }),
     chartData(year, filters)
   ]);
-  const clients = await prisma.client.findMany({ where: { id: { in: incomeByClient.map((item) => item.clientId) } } });
-  const byClient = incomeByClient.map((item) => ({ client: clients.find((client) => client.id === item.clientId)?.name ?? 'Unknown', amount: money(item._sum.amount) }));
+  const incomeByClient = totalBy(incomeRows, (item) => item.clientId, start, end).sort((a, b) => b.amount - a.amount).slice(0, 10);
+  const expensesByCategory = totalBy(expenseRows, (item) => item.category, start, end).sort((a, b) => b.amount - a.amount);
+  const clients = await prisma.client.findMany({ where: { id: { in: incomeByClient.map((item) => item.key) } } });
+  const byClient = incomeByClient.map((item) => ({ client: clients.find((client) => client.id === item.key)?.name ?? 'Unknown', amount: item.amount }));
   return ok(res, 'Reports loaded', {
     summary: {
       monthlyIncome: totals.income,
@@ -71,7 +109,16 @@ export async function reports(req: Request, res: Response) {
     },
     incomeByClient: byClient,
     topPayingClients: byClient.slice(0, 5),
-    expensesByCategory: expensesByCategory.map((item) => ({ category: item.category, amount: money(item._sum.amount) })),
+    expensesByCategory: expensesByCategory.map((item) => ({ category: item.key, amount: item.amount })),
     charts
   });
+}
+
+function totalBy<T extends Pick<Income | Expense, 'amount' | 'date' | 'frequency'>>(items: T[], getKey: (item: T) => string, start: Date, end: Date) {
+  const totals = new Map<string, number>();
+  for (const item of items) {
+    const key = getKey(item);
+    totals.set(key, (totals.get(key) ?? 0) + money(item.amount) * occurrencesInRange(item.date, item.frequency, start, end));
+  }
+  return Array.from(totals, ([key, amount]) => ({ key, amount }));
 }

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PaymentMethod } from '@prisma/client';
+import { PaymentFrequency, PaymentMethod } from '@prisma/client';
 import { dateString, decimal } from './common.js';
 
 export const incomeBody = z.object({
@@ -8,6 +8,7 @@ export const incomeBody = z.object({
   currency: z.string().min(3).max(8).default('USD'),
   date: dateString,
   paymentMethod: z.nativeEnum(PaymentMethod),
+  frequency: z.nativeEnum(PaymentFrequency).default(PaymentFrequency.ONE_TIME),
   referenceNumber: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   invoiceNumber: z.string().optional().nullable()

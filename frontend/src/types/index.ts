@@ -1,6 +1,7 @@
 export type ClientService = 'META_ADS' | 'TIKTOK_ADS' | 'GOOGLE_ADS' | 'SOCIAL_MEDIA_MANAGEMENT' | 'CONTENT_CREATION' | 'SHOPIFY_STORE' | 'WEBSITE_DEVELOPMENT' | 'WEB_APPLICATION' | 'MOBILE_APPLICATION' | 'BRANDING' | 'OTHER';
 export type ClientStatus = 'ACTIVE' | 'PAUSED' | 'COMPLETED';
 export type PaymentMethod = 'CASH' | 'BANK' | 'WHISH' | 'OMT' | 'TRANSFER' | 'OTHER';
+export type PaymentFrequency = 'ONE_TIME' | 'MONTHLY';
 export type ExpenseCategory = 'OFFICE' | 'SOFTWARE' | 'ADS' | 'FREELANCER' | 'EMPLOYEE' | 'INTERNET' | 'PHONE' | 'TRANSPORTATION' | 'EQUIPMENT' | 'UTILITIES' | 'MARKETING' | 'OTHER';
 
 export interface Client {
@@ -26,6 +27,7 @@ export interface Income {
   currency: string;
   date: string;
   paymentMethod: PaymentMethod;
+  frequency: PaymentFrequency;
   referenceNumber?: string;
   description?: string;
   invoiceNumber?: string;
@@ -38,6 +40,7 @@ export interface Expense {
   currency: string;
   category: ExpenseCategory;
   paymentMethod: PaymentMethod;
+  frequency: PaymentFrequency;
   date: string;
   vendor?: string;
   receiptNumber?: string;
