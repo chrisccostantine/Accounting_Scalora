@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ClientService {
+  META_ADS
+  TIKTOK_ADS
+  GOOGLE_ADS
+  SOCIAL_MEDIA_MANAGEMENT
+  CONTENT_CREATION
+  SHOPIFY_STORE
+  WEBSITE_DEVELOPMENT
+  WEB_APPLICATION
+  MOBILE_APPLICATION
+  BRANDING
+  OTHER
+}
+
+enum ClientStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK
+  WHISH
+  OMT
+  TRANSFER
+  OTHER
+}
+
+enum ExpenseCategory {
+  OFFICE
+  SOFTWARE
+  ADS
+  FREELANCER
+  EMPLOYEE
+  INTERNET
+  PHONE
+  TRANSPORTATION
+  EQUIPMENT
+  UTILITIES
+  MARKETING
+  OTHER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Client {
+  id                String        @id @default(cuid())
+  name              String
+  company           String?
+  phone             String?
+  email             String?
+  service           ClientService
+  monthlyFee        Decimal       @db.Decimal(12, 2)
+  currency          String        @default("USD")
+  status            ClientStatus  @default(ACTIVE)
+  contractStartDate DateTime
+  notes             String?
+  income            Income[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([status])
+  @@index([service])
+  @@map("clients")
+}
+
+model Income {
+  id              String        @id @default(cuid())
+  clientId        String
+  client          Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  amount          Decimal       @db.Decimal(12, 2)
+  currency        String        @default("USD")
+  date            DateTime
+  paymentMethod   PaymentMethod
+  referenceNumber String?
+  description     String?
+  invoiceNumber   String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([clientId])
+  @@index([date])
+  @@map("income")
+}
+
+model Expense {
+  id             String          @id @default(cuid())
+  title          String
+  amount         Decimal         @db.Decimal(12, 2)
+  currency       String          @default("USD")
+  category       ExpenseCategory
+  paymentMethod  PaymentMethod
+  date           DateTime
+  vendor         String?
+  receiptNumber  String?
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([category])
+  @@index([date])
+  @@map("expenses")
+}
