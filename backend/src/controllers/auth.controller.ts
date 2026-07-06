@@ -4,8 +4,13 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../config/prisma.js';
 import { env } from '../config/env.js';
 import { fail, ok } from '../utils/api.js';
+import { ensureAdminUser } from '../services/admin.service.js';
 
 export async function login(req: Request, res: Response) {
+  if (req.body.email === env.ADMIN_EMAIL) {
+    await ensureAdminUser();
+  }
+
   const user = await prisma.user.findUnique({ where: { email: req.body.email } });
   if (!user) return fail(res, 'Invalid email or password', 401);
 

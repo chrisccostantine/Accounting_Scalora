@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Navigate } from 'react-router-dom';
 import { z } from 'zod';
+import type { AxiosError } from 'axios';
 import { useAuth } from '../context/AuthContext';
 
 const schema = z.object({ email: z.string().email(), password: z.string().min(8) });
@@ -19,7 +20,12 @@ export function LoginPage() {
     <div className="grid min-h-screen place-items-center bg-black p-4">
       <form className="panel w-full max-w-md p-6" onSubmit={handleSubmit(async (values) => {
         setError('');
-        try { await login(values.email, values.password); } catch { setError('Invalid email or password'); }
+        try {
+          await login(values.email, values.password);
+        } catch (caught) {
+          const error = caught as AxiosError<{ message?: string }>;
+          setError(error.response?.data?.message ?? 'Could not reach the backend. Check VITE_API_URL and backend CORS.');
+        }
       })}>
         <div className="mb-6 flex items-center gap-3">
           <div className="rounded-md bg-scalora-blue p-3"><LockKeyhole size={22} /></div>
