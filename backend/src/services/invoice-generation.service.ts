@@ -24,9 +24,9 @@ function invoiceNumber(client: Client, periodStart: Date) {
 }
 
 function descriptionFor(client: Client, periodStart: Date, periodEnd: Date) {
-  const start = periodStart.toISOString().slice(0, 10);
-  const end = new Date(periodEnd.getTime() - 1).toISOString().slice(0, 10);
-  return `${client.service.replaceAll('_', ' ').toLowerCase()} billing period ${start} to ${end}`;
+  const service = client.service.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const month = periodStart.toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return `${service} - ${month}`;
 }
 
 async function createInvoiceForClient(client: Client, periodStart: Date, periodEnd: Date) {

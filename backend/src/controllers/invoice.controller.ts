@@ -12,6 +12,14 @@ function param(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value ?? '';
 }
 
+function pdfMonth(invoice: { billingPeriodStart?: Date | null; issueDate: Date }) {
+  return (invoice.billingPeriodStart ?? invoice.issueDate).toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+function safeFilename(value: string) {
+  return value.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').replace(/\s+/g, ' ').trim() || 'Invoice';
+}
+
 function computedStatus(invoice: { status: InvoiceStatus; amount: unknown; paidAmount: unknown; dueDate: Date }): InvoiceStatus {
   if (invoice.status === 'CANCELLED' || invoice.status === 'DRAFT') return invoice.status;
   const amount = money(invoice.amount);
@@ -76,8 +84,11 @@ export async function downloadInvoicePdf(req: Request, res: Response) {
   const invoice = await prisma.invoice.findUnique({ where: { id: param(req.params.id) }, include: { client: true } });
   if (!invoice) return fail(res, 'Invoice not found', 404);
   const pdf = renderInvoicePdf(invoice);
+  const businessName = invoice.client.company || invoice.client.name;
+  const filename = safeFilename(`${businessName} - ${pdfMonth(invoice)}.pdf`);
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${invoice.invoiceNumber}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Invoice-Filename', filename);
   return res.send(pdf);
 }
 

@@ -18,6 +18,13 @@ const paymentSchema = z.object({ amount: z.coerce.number().positive(), currency:
 type InvoiceForm = z.infer<typeof invoiceSchema>;
 type PaymentForm = z.infer<typeof paymentSchema>;
 
+function pdfFilename(invoice: Invoice) {
+  const business = invoice.client?.company || invoice.client?.name || invoice.invoiceNumber;
+  const sourceDate = invoice.billingPeriodStart || invoice.issueDate;
+  const month = new Date(sourceDate).toLocaleString('en', { month: 'long', year: 'numeric' });
+  return `${business} - ${month}.pdf`;
+}
+
 export function InvoicesPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -38,10 +45,11 @@ export function InvoicesPage() {
 
   async function downloadPdf(invoice: Invoice) {
     const response = await api.get(`/invoices/${invoice.id}/pdf`, { responseType: 'blob' });
+    const serverFilename = response.headers['x-invoice-filename'];
     const url = URL.createObjectURL(response.data);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${invoice.invoiceNumber}.pdf`;
+    link.download = typeof serverFilename === 'string' ? serverFilename : pdfFilename(invoice);
     link.click();
     URL.revokeObjectURL(url);
   }

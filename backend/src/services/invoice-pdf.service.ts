@@ -16,12 +16,20 @@ function date(value: Date | null) {
   return value ? value.toISOString().slice(0, 10) : '-';
 }
 
+function month(value: Date | null) {
+  return value ? value.toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : '-';
+}
+
 function escapePdf(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
 
 function text(x: number, y: number, size: number, value: string) {
   return `BT /F1 ${size} Tf ${x} ${y} Td (${escapePdf(value)}) Tj ET`;
+}
+
+function color(r: number, g: number, b: number) {
+  return `${r} ${g} ${b} rg`;
 }
 
 function line(x1: number, y1: number, x2: number, y2: number) {
@@ -119,46 +127,55 @@ function loadLogo() {
 export function renderInvoicePdf(invoice: PdfInvoice) {
   const logo = loadLogo();
   const outstanding = Math.max(0, Number(invoice.amount) - Number(invoice.paidAmount));
+  const paidApplied = Math.min(Number(invoice.paidAmount), Number(invoice.amount));
+  const credit = Math.max(0, Number(invoice.paidAmount) - Number(invoice.amount));
   const service = invoice.client.service.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
-  const period = invoice.billingPeriodStart && invoice.billingPeriodEnd ? `${date(invoice.billingPeriodStart)} to ${date(new Date(invoice.billingPeriodEnd.getTime() - 1))}` : '-';
+  const invoiceMonth = month(invoice.billingPeriodStart ?? invoice.issueDate);
+  const businessName = invoice.client.company || invoice.client.name;
+  const description = invoice.description && !invoice.description.toLowerCase().includes('billing period') ? invoice.description : `${service} - ${invoiceMonth}`;
   const content = [
-    logo ? 'q 92 0 0 46 48 746 cm /Logo Do Q' : '0.12 0.38 0.92 rg 48 746 44 44 re f',
+    logo ? 'q 124 0 0 62 48 742 cm /Logo Do Q' : '0.12 0.38 0.92 rg 48 746 44 44 re f',
     logo ? '' : '1 1 1 rg',
     logo ? '' : text(61, 761, 24, 'S'),
-    '0 0 0 rg',
-    logo ? text(154, 772, 24, 'Scalora') : text(104, 772, 24, 'Scalora'),
-    logo ? text(154, 752, 10, 'Accounting Invoice') : text(104, 752, 10, 'Accounting Invoice'),
-    text(430, 770, 26, 'INVOICE'),
+    color(0, 0, 0),
+    text(430, 770, 28, 'INVOICE'),
+    color(0.35, 0.39, 0.48),
     text(430, 748, 10, invoice.invoiceNumber),
-    line(48, 728, 548, 728),
-    text(48, 696, 11, 'Bill To'),
-    text(48, 678, 16, invoice.client.name),
-    text(48, 660, 10, invoice.client.company ?? ''),
-    text(48, 644, 10, invoice.client.email ?? ''),
-    text(48, 628, 10, invoice.client.phone ?? ''),
-    text(360, 696, 11, 'Invoice Details'),
-    text(360, 678, 10, `Issue Date: ${date(invoice.issueDate)}`),
-    text(360, 662, 10, `Due Date: ${date(invoice.dueDate)}`),
-    text(360, 646, 10, `Status: ${invoice.status}`),
-    text(360, 630, 10, `Period: ${period}`),
-    '0.94 0.96 1 rg 48 555 500 34 re f',
-    '0 0 0 rg',
-    text(62, 568, 11, 'Description'),
-    text(372, 568, 11, 'Amount'),
+    color(0, 0, 0),
+    line(48, 724, 548, 724),
+    color(0.35, 0.39, 0.48),
+    text(48, 690, 10, 'CLIENT'),
+    color(0, 0, 0),
+    text(48, 670, 18, businessName),
+    ...(invoice.client.company && invoice.client.name !== invoice.client.company ? [color(0.35, 0.39, 0.48), text(48, 652, 10, invoice.client.name)] : []),
+    color(0.35, 0.39, 0.48),
+    text(360, 690, 10, 'DETAILS'),
+    color(0, 0, 0),
+    text(360, 670, 10, `Invoice Date: ${date(invoice.issueDate)}`),
+    text(360, 654, 10, `Due Date: ${date(invoice.dueDate)}`),
+    text(360, 638, 10, `Month: ${invoiceMonth}`),
+    text(360, 622, 10, `Status: ${invoice.status}`),
+    '0.95 0.97 1 rg 48 555 500 36 re f',
+    color(0.12, 0.16, 0.24),
+    text(62, 569, 11, 'Service'),
+    text(414, 569, 11, 'Amount'),
+    '0.75 0.79 0.86 RG',
     line(48, 555, 548, 555),
-    text(62, 526, 11, invoice.description ?? service),
-    text(372, 526, 11, money(invoice.amount, invoice.currency)),
+    color(0, 0, 0),
+    text(62, 526, 11, description),
+    text(414, 526, 11, money(invoice.amount, invoice.currency)),
+    '0.75 0.79 0.86 RG',
     line(48, 504, 548, 504),
+    color(0, 0, 0),
     text(338, 466, 11, 'Subtotal'),
     text(438, 466, 11, money(invoice.amount, invoice.currency)),
     text(338, 444, 11, 'Paid'),
-    text(438, 444, 11, money(invoice.paidAmount, invoice.currency)),
-    '0.12 0.38 0.92 rg',
-    text(338, 414, 14, 'Balance Due'),
-    text(438, 414, 14, money(outstanding, invoice.currency)),
-    '0 0 0 rg',
-    text(48, 360, 10, invoice.notes ?? 'Thank you for your business.'),
-    text(48, 82, 9, 'Scalora - Internal accounting document')
+    text(438, 444, 11, money(paidApplied, invoice.currency)),
+    ...(credit > 0 ? [text(338, 422, 11, 'Credit'), text(438, 422, 11, money(credit, invoice.currency))] : []),
+    color(0.1, 0.37, 0.92),
+    text(338, credit > 0 ? 392 : 414, 14, 'Balance Due'),
+    text(438, credit > 0 ? 392 : 414, 14, money(outstanding, invoice.currency)),
+    color(0, 0, 0)
   ].join('\n');
 
   const resources = logo ? '<< /Font << /F1 4 0 R >> /XObject << /Logo 6 0 R >> >>' : '<< /Font << /F1 4 0 R >> >>';
