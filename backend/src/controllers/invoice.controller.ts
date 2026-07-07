@@ -3,6 +3,8 @@ import { InvoiceStatus, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { fail, ok, pagination } from '../utils/api.js';
 import { recordActivity } from '../services/activity.service.js';
+import { generateInvoicesForPeriod } from '../services/invoice-generation.service.js';
+import { renderInvoicePdf } from '../services/invoice-pdf.service.js';
 
 const money = (value: unknown) => Number(value ?? 0);
 
@@ -54,6 +56,29 @@ export async function createInvoice(req: Request, res: Response) {
   const invoice = await prisma.invoice.create({ data: req.body, include: { client: true, payments: true } });
   await recordActivity({ action: 'CREATED', entityType: 'INVOICE', entityId: invoice.id, title: `Invoice ${invoice.invoiceNumber} created`, details: invoice.client.name });
   return ok(res, 'Invoice created', { ...invoice, computedStatus: computedStatus(invoice), outstanding: money(invoice.amount) }, 201);
+}
+
+export async function generateInvoices(req: Request, res: Response) {
+  const now = new Date();
+  const year = Number(req.body.year ?? now.getUTCFullYear());
+  const month = Number(req.body.month ?? now.getUTCMonth() + 1);
+  if (month < 1 || month > 12) return fail(res, 'Month must be between 1 and 12', 422);
+  const result = await generateInvoicesForPeriod(year, month);
+  return ok(res, 'Invoices generated', {
+    period: result.period,
+    created: result.created.length,
+    skipped: result.skipped.length,
+    invoices: result.created
+  });
+}
+
+export async function downloadInvoicePdf(req: Request, res: Response) {
+  const invoice = await prisma.invoice.findUnique({ where: { id: param(req.params.id) }, include: { client: true } });
+  if (!invoice) return fail(res, 'Invoice not found', 404);
+  const pdf = renderInvoicePdf(invoice);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${invoice.invoiceNumber}.pdf"`);
+  return res.send(pdf);
 }
 
 export async function updateInvoice(req: Request, res: Response) {
