@@ -1,10 +1,11 @@
 import type { Request, Response } from 'express';
-import { InvoiceStatus, Prisma } from '@prisma/client';
+import { InvoiceStatus, PaymentMethod, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { fail, ok, pagination } from '../utils/api.js';
 import { recordActivity } from '../services/activity.service.js';
 import { generateInvoicesForPeriod } from '../services/invoice-generation.service.js';
 import { renderInvoicePdf } from '../services/invoice-pdf.service.js';
+import { reconcileInvoiceIncome } from '../services/invoice-reconciliation.service.js';
 
 const money = (value: unknown) => Number(value ?? 0);
 
@@ -31,11 +32,65 @@ function computedStatus(invoice: { status: InvoiceStatus; amount: unknown; paidA
 }
 
 async function refreshInvoice(invoiceId: string) {
-  const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId }, include: { payments: true } });
+  const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId }, include: { payments: true, income: true } });
   if (!invoice) return null;
-  const paidAmount = invoice.payments.reduce((total, payment) => total + money(payment.amount), 0);
+  const paymentsTotal = invoice.payments.reduce((total, payment) => total + money(payment.amount), 0);
+  const incomeTotal = invoice.income.reduce((total, income) => total + money(income.amount), 0);
+  const paidAmount = Math.max(paymentsTotal, incomeTotal);
   const status = computedStatus({ ...invoice, paidAmount });
   return prisma.invoice.update({ where: { id: invoiceId }, data: { paidAmount, status }, include: { client: true, payments: true } });
+}
+
+function invoicePeriod(invoice: { issueDate: Date; billingPeriodStart?: Date | null; billingPeriodEnd?: Date | null }) {
+  const start = invoice.billingPeriodStart ?? new Date(Date.UTC(invoice.issueDate.getUTCFullYear(), invoice.issueDate.getUTCMonth(), 1));
+  const end = invoice.billingPeriodEnd ?? new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+  return { start, end };
+}
+
+async function findReusableIncome(invoice: { id: string; clientId: string; amount: unknown; currency: string; issueDate: Date; billingPeriodStart?: Date | null; billingPeriodEnd?: Date | null }, payment: { amount: unknown; currency?: string; referenceNumber?: string | null }) {
+  const { start, end } = invoicePeriod(invoice);
+  return prisma.income.findFirst({
+    where: {
+      clientId: invoice.clientId,
+      invoiceId: null,
+      currency: payment.currency ?? invoice.currency,
+      date: { gte: start, lt: end },
+      amount: payment.referenceNumber ? undefined : money(payment.amount),
+      OR: payment.referenceNumber ? [{ referenceNumber: payment.referenceNumber }, { amount: money(payment.amount) }] : undefined
+    },
+    orderBy: { date: 'desc' }
+  });
+}
+
+async function syncInvoicePaymentToIncome(invoice: { id: string; clientId: string; amount: unknown; currency: string; invoiceNumber: string; issueDate: Date; billingPeriodStart?: Date | null; billingPeriodEnd?: Date | null }, body: { amount: unknown; currency?: string; date: Date; paymentMethod: PaymentMethod; referenceNumber?: string | null }) {
+  const reusableIncome = await findReusableIncome(invoice, body);
+  if (reusableIncome) {
+    await prisma.income.update({
+      where: { id: reusableIncome.id },
+      data: {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        description: reusableIncome.description ?? `Payment for invoice ${invoice.invoiceNumber}`
+      }
+    });
+    return { income: reusableIncome, reused: true };
+  }
+
+  const income = await prisma.income.create({
+    data: {
+      clientId: invoice.clientId,
+      invoiceId: invoice.id,
+      amount: money(body.amount),
+      currency: body.currency ?? invoice.currency,
+      date: body.date,
+      paymentMethod: body.paymentMethod,
+      frequency: 'ONE_TIME',
+      referenceNumber: body.referenceNumber,
+      invoiceNumber: invoice.invoiceNumber,
+      description: `Payment for invoice ${invoice.invoiceNumber}`
+    }
+  });
+  return { income, reused: false };
 }
 
 export async function listInvoices(req: Request, res: Response) {
@@ -80,6 +135,11 @@ export async function generateInvoices(req: Request, res: Response) {
   });
 }
 
+export async function reconcileInvoices(req: Request, res: Response) {
+  const result = await reconcileInvoiceIncome();
+  return ok(res, 'Invoices reconciled', result);
+}
+
 export async function downloadInvoicePdf(req: Request, res: Response) {
   const invoice = await prisma.invoice.findUnique({ where: { id: param(req.params.id) }, include: { client: true } });
   if (!invoice) return fail(res, 'Invoice not found', 404);
@@ -111,21 +171,8 @@ export async function addInvoicePayment(req: Request, res: Response) {
   const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
   if (!invoice) return fail(res, 'Invoice not found', 404);
   const payment = await prisma.invoicePayment.create({ data: { ...req.body, invoiceId } });
-  await prisma.income.create({
-    data: {
-      clientId: invoice.clientId,
-      invoiceId,
-      amount: req.body.amount,
-      currency: req.body.currency,
-      date: req.body.date,
-      paymentMethod: req.body.paymentMethod,
-      frequency: 'ONE_TIME',
-      referenceNumber: req.body.referenceNumber,
-      invoiceNumber: invoice.invoiceNumber,
-      description: `Payment for invoice ${invoice.invoiceNumber}`
-    }
-  });
+  const incomeSync = await syncInvoicePaymentToIncome(invoice, req.body);
   const updated = await refreshInvoice(invoiceId);
-  await recordActivity({ action: 'PAID', entityType: 'INVOICE', entityId: invoiceId, title: `Payment recorded for ${invoice.invoiceNumber}`, details: String(req.body.amount) });
-  return ok(res, 'Payment recorded', { payment, invoice: updated }, 201);
+  await recordActivity({ action: 'PAID', entityType: 'INVOICE', entityId: invoiceId, title: incomeSync.reused ? `Existing payment linked to ${invoice.invoiceNumber}` : `Payment recorded for ${invoice.invoiceNumber}`, details: String(req.body.amount) });
+  return ok(res, incomeSync.reused ? 'Existing payment linked to invoice' : 'Payment recorded', { payment, invoice: updated, income: incomeSync.income, reusedIncome: incomeSync.reused }, 201);
 }

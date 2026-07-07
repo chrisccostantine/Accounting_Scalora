@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CreditCard, Download, FilePlus2, Plus, Search, Trash2 } from 'lucide-react';
+import { CreditCard, Download, FilePlus2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -43,6 +43,11 @@ export function InvoicesPage() {
     await Promise.all([queryClient.invalidateQueries({ queryKey: ['invoices'] }), queryClient.invalidateQueries({ queryKey: ['dashboard'] }), queryClient.invalidateQueries({ queryKey: ['reports'] })]);
   }
 
+  async function reconcileInvoices() {
+    await api.post('/invoices/reconcile', {});
+    await Promise.all([queryClient.invalidateQueries({ queryKey: ['invoices'] }), queryClient.invalidateQueries({ queryKey: ['income'] }), queryClient.invalidateQueries({ queryKey: ['dashboard'] }), queryClient.invalidateQueries({ queryKey: ['reports'] })]);
+  }
+
   async function downloadPdf(invoice: Invoice) {
     const response = await api.get(`/invoices/${invoice.id}/pdf`, { responseType: 'blob' });
     const serverFilename = response.headers['x-invoice-filename'];
@@ -56,7 +61,7 @@ export function InvoicesPage() {
 
   return (
     <>
-      <PageHeader title="Invoices" action={<div className="flex flex-wrap gap-2"><button className="btn-secondary" onClick={generateCurrentInvoices}><FilePlus2 size={16} /> Generate This Month</button><button className="btn-primary" onClick={() => { setEditing(null); setOpen(true); }}><Plus size={16} /> New Invoice</button></div>} />
+      <PageHeader title="Invoices" action={<div className="flex flex-wrap gap-2"><button className="btn-secondary" onClick={reconcileInvoices}><RefreshCw size={16} /> Fix Duplicates</button><button className="btn-secondary" onClick={generateCurrentInvoices}><FilePlus2 size={16} /> Generate This Month</button><button className="btn-primary" onClick={() => { setEditing(null); setOpen(true); }}><Plus size={16} /> New Invoice</button></div>} />
       <div className="panel mb-4 flex flex-wrap items-center gap-2 p-3">
         <Search size={16} className="text-slate-500" />
         <input className="input min-w-64 flex-1 border-0 bg-transparent" placeholder="Search invoices" value={search} onChange={(event) => setSearch(event.target.value)} />
