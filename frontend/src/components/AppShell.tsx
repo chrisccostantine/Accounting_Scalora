@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { BarChart3, CreditCard, HandCoins, LayoutDashboard, LogOut, ReceiptText, Users } from 'lucide-react';
+import { BarChart3, CreditCard, FileClock, Files, HandCoins, LayoutDashboard, LogOut, ReceiptText, ScrollText, TrendingUp, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const nav = [
@@ -7,7 +7,11 @@ const nav = [
   { to: '/clients', label: 'Clients', icon: Users },
   { to: '/income', label: 'Income', icon: CreditCard },
   { to: '/expenses', label: 'Expenses', icon: ReceiptText },
+  { to: '/invoices', label: 'Invoices', icon: ScrollText },
   { to: '/advances', label: 'Advances', icon: HandCoins },
+  { to: '/cash-flow', label: 'Cash Flow', icon: TrendingUp },
+  { to: '/attachments', label: 'Files', icon: Files },
+  { to: '/activity', label: 'Activity', icon: FileClock },
   { to: '/reports', label: 'Reports', icon: BarChart3 }
 ];
 

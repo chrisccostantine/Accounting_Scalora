@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ok, pagination } from '../utils/api.js';
+import { recordActivity } from '../services/activity.service.js';
 
 function param(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value ?? '';
@@ -32,15 +33,18 @@ export async function listIncome(req: Request, res: Response) {
 
 export async function createIncome(req: Request, res: Response) {
   const item = await prisma.income.create({ data: req.body, include: { client: true } });
+  await recordActivity({ action: 'CREATED', entityType: 'INCOME', entityId: item.id, title: `Income recorded for ${item.client.name}`, details: String(item.amount) });
   return ok(res, 'Income created', item, 201);
 }
 
 export async function updateIncome(req: Request, res: Response) {
   const item = await prisma.income.update({ where: { id: param(req.params.id) }, data: req.body, include: { client: true } });
+  await recordActivity({ action: 'UPDATED', entityType: 'INCOME', entityId: item.id, title: `Income updated for ${item.client.name}` });
   return ok(res, 'Income updated', item);
 }
 
 export async function deleteIncome(req: Request, res: Response) {
   await prisma.income.delete({ where: { id: param(req.params.id) } }).catch(() => null);
+  await recordActivity({ action: 'DELETED', entityType: 'INCOME', entityId: param(req.params.id), title: 'Income deleted' });
   return ok(res, 'Income deleted');
 }

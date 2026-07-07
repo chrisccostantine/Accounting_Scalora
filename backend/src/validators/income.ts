@@ -4,6 +4,7 @@ import { dateString, decimal } from './common.js';
 
 export const incomeBody = z.object({
   clientId: z.string().min(1),
+  invoiceId: z.string().optional().nullable(),
   amount: decimal,
   currency: z.string().min(3).max(8).default('USD'),
   date: dateString,

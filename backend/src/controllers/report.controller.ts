@@ -52,7 +52,7 @@ export async function dashboard(req: Request, res: Response) {
   const totals = await totalsBetween(start, end);
   const incomeActiveInRange: Prisma.IncomeWhereInput = { OR: [{ frequency: { in: ['MONTHLY', 'YEARLY'] }, date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }] };
   const expenseActiveInRange: Prisma.ExpenseWhereInput = { OR: [{ frequency: { in: ['MONTHLY', 'YEARLY'] }, date: { lt: end } }, { frequency: 'ONE_TIME', date: { gte: start, lt: end } }] };
-  const [activeClients, recentIncome, recentExpenses, recentClients, billableClients, monthIncome, monthExpenses, advances] = await Promise.all([
+  const [activeClients, recentIncome, recentExpenses, recentClients, billableClients, monthIncome, monthExpenses, advances, monthInvoices, openInvoices, activity] = await Promise.all([
     prisma.client.count({ where: { status: 'ACTIVE' } }),
     prisma.income.findMany({ include: { client: true }, orderBy: { date: 'desc' }, take: 5 }),
     prisma.expense.findMany({ orderBy: { date: 'desc' }, take: 5 }),
@@ -60,11 +60,16 @@ export async function dashboard(req: Request, res: Response) {
     prisma.client.findMany({ where: { status: 'ACTIVE', contractStartDate: { lt: end } }, select: { id: true, name: true, monthlyFee: true, contractStartDate: true, billingFrequency: true } }),
     prisma.income.findMany({ where: incomeActiveInRange, include: { client: true } }),
     prisma.expense.findMany({ where: expenseActiveInRange }),
-    prisma.ownerAdvance.findMany({ where: { status: 'OPEN' }, include: { repayments: true } })
+    prisma.ownerAdvance.findMany({ where: { status: 'OPEN' }, include: { repayments: true } }),
+    prisma.invoice.findMany({ where: { dueDate: { gte: start, lt: end }, status: { not: 'CANCELLED' } }, include: { client: true, payments: true } }),
+    prisma.invoice.findMany({ where: { status: { in: ['SENT', 'PARTIAL', 'OVERDUE'] } }, include: { client: true }, orderBy: { dueDate: 'asc' }, take: 8 }),
+    prisma.activityLog.findMany({ orderBy: { createdAt: 'desc' }, take: 6 })
   ]);
   const collected = totals.income;
-  const expectedRevenue = expectedClientFees(billableClients, start, end);
-  const pending = Math.max(0, expectedRevenue - collected);
+  const invoicedRevenue = monthInvoices.reduce((sum, invoice) => sum + money(invoice.amount), 0);
+  const invoiceCollected = monthInvoices.reduce((sum, invoice) => sum + money(invoice.paidAmount), 0);
+  const expectedRevenue = Math.max(invoicedRevenue, expectedClientFees(billableClients, start, end));
+  const pending = monthInvoices.length ? monthInvoices.reduce((sum, invoice) => sum + Math.max(0, money(invoice.amount) - money(invoice.paidAmount)), 0) : Math.max(0, expectedRevenue - collected);
   const collectionRate = expectedRevenue > 0 ? Math.min(100, (collected / expectedRevenue) * 100) : 100;
   const profitMargin = collected > 0 ? ((collected - totals.expenses) / collected) * 100 : 0;
   const topClients = totalBy(monthIncome, (item) => item.client?.name ?? 'Unknown', start, end).sort((a, b) => b.amount - a.amount).slice(0, 5).map((item) => ({ client: item.key, amount: item.amount }));
@@ -75,16 +80,19 @@ export async function dashboard(req: Request, res: Response) {
   }, 0);
   const attention = [
     ...(pending > 0 ? [`${money(pending).toLocaleString('en-US')} still pending this month`] : []),
+    ...(openInvoices.some((invoice) => invoice.dueDate < new Date()) ? ['At least one invoice is overdue'] : []),
     ...(ownerAdvanceOutstanding > 0 ? [`${money(ownerAdvanceOutstanding).toLocaleString('en-US')} owed back to owner`] : []),
     ...(totals.expenses > collected ? ['Expenses are higher than collected income this month'] : []),
     ...(activeClients === 0 ? ['No active clients yet'] : [])
   ];
   const charts = await chartData(new Date().getFullYear());
   return ok(res, 'Dashboard loaded', {
-    cards: { totalIncome: totals.income, totalExpenses: totals.expenses, netProfit: totals.income - totals.expenses, activeClients, collected, pending, expectedRevenue, collectionRate, profitMargin, ownerAdvanceOutstanding },
+    cards: { totalIncome: totals.income, totalExpenses: totals.expenses, netProfit: totals.income - totals.expenses, activeClients, collected, pending, expectedRevenue, collectionRate, profitMargin, ownerAdvanceOutstanding, invoicedRevenue, invoiceCollected },
     topClients,
     topExpenseCategories,
     attention,
+    openInvoices: openInvoices.map((invoice) => ({ ...invoice, outstanding: Math.max(0, money(invoice.amount) - money(invoice.paidAmount)) })),
+    activity,
     recentIncome,
     recentExpenses,
     recentClients,
@@ -126,6 +134,20 @@ export async function reports(req: Request, res: Response) {
   const expensesByCategory = totalBy(expenseRows, (item) => item.category, start, end).sort((a, b) => b.amount - a.amount);
   const clients = await prisma.client.findMany({ where: { id: { in: incomeByClient.map((item) => item.key) } } });
   const byClient = incomeByClient.map((item) => ({ client: clients.find((client) => client.id === item.key)?.name ?? 'Unknown', amount: item.amount }));
+  const [invoices, recurringIncome, recurringExpenses] = await Promise.all([
+    prisma.invoice.findMany({ where: { dueDate: { gte: start, lt: end }, status: { not: 'CANCELLED' } }, include: { client: true }, orderBy: { dueDate: 'asc' } }),
+    prisma.income.findMany({ where: { frequency: { in: ['MONTHLY', 'YEARLY'] } }, include: { client: true }, orderBy: { date: 'asc' } }),
+    prisma.expense.findMany({ where: { frequency: { in: ['MONTHLY', 'YEARLY'] } }, orderBy: { date: 'asc' } })
+  ]);
+  const invoiceSummary = invoices.reduce((summary, invoice) => {
+    const outstanding = Math.max(0, money(invoice.amount) - money(invoice.paidAmount));
+    return {
+      invoiced: summary.invoiced + money(invoice.amount),
+      paid: summary.paid + money(invoice.paidAmount),
+      outstanding: summary.outstanding + outstanding,
+      overdue: summary.overdue + (invoice.dueDate < new Date() && outstanding > 0 ? outstanding : 0)
+    };
+  }, { invoiced: 0, paid: 0, outstanding: 0, overdue: 0 });
   return ok(res, 'Reports loaded', {
     summary: {
       monthlyIncome: totals.income,
@@ -134,14 +156,62 @@ export async function reports(req: Request, res: Response) {
       yearlyProfit: yearly.income - yearly.expenses,
       profitMargin: totals.income > 0 ? ((totals.income - totals.expenses) / totals.income) * 100 : 0,
       averageMonthlyIncome: yearly.income / 12,
-      averageMonthlyExpenses: yearly.expenses / 12
+      averageMonthlyExpenses: yearly.expenses / 12,
+      invoiced: invoiceSummary.invoiced,
+      invoiceOutstanding: invoiceSummary.outstanding,
+      overdueInvoices: invoiceSummary.overdue
     },
     incomeByClient: byClient,
     topPayingClients: byClient.slice(0, 5),
     expensesByCategory: expensesByCategory.map((item) => ({ category: item.key, amount: item.amount })),
+    currencyBreakdown: currencyBreakdown(incomeRows, expenseRows),
     charts,
-    monthlyBreakdown: charts.map((item) => ({ ...item, margin: item.income > 0 ? (item.profit / item.income) * 100 : 0 }))
+    monthlyBreakdown: charts.map((item) => ({ ...item, margin: item.income > 0 ? (item.profit / item.income) * 100 : 0 })),
+    invoices: invoices.map((invoice) => ({ invoiceNumber: invoice.invoiceNumber, client: invoice.client.name, dueDate: invoice.dueDate, amount: money(invoice.amount), paidAmount: money(invoice.paidAmount), outstanding: Math.max(0, money(invoice.amount) - money(invoice.paidAmount)), currency: invoice.currency, status: invoice.status })),
+    recurringSchedule: [
+      ...recurringIncome.map((item) => ({ type: 'Income', name: item.client?.name ?? item.description ?? 'Income', frequency: item.frequency, amount: money(item.amount), currency: item.currency, nextAnchorDate: item.date })),
+      ...recurringExpenses.map((item) => ({ type: 'Expense', name: item.title, frequency: item.frequency, amount: money(item.amount), currency: item.currency, nextAnchorDate: item.date }))
+    ],
+    cashFlow: charts.map((item) => ({ month: item.month, inflow: item.income, outflow: item.expenses, net: item.profit, closingCash: charts.slice(0, charts.indexOf(item) + 1).reduce((sum, row) => sum + row.profit, 0) }))
   });
+}
+
+export async function exportReport(req: Request, res: Response) {
+  const year = Number(req.query.year ?? new Date().getFullYear());
+  const rows = await prisma.$transaction(async (tx) => {
+    const [income, expenses, invoices] = await Promise.all([
+      tx.income.findMany({ where: { date: { gte: new Date(Date.UTC(year, 0, 1)), lt: new Date(Date.UTC(year + 1, 0, 1)) } }, include: { client: true }, orderBy: { date: 'asc' } }),
+      tx.expense.findMany({ where: { date: { gte: new Date(Date.UTC(year, 0, 1)), lt: new Date(Date.UTC(year + 1, 0, 1)) } }, orderBy: { date: 'asc' } }),
+      tx.invoice.findMany({ where: { issueDate: { gte: new Date(Date.UTC(year, 0, 1)), lt: new Date(Date.UTC(year + 1, 0, 1)) } }, include: { client: true }, orderBy: { issueDate: 'asc' } })
+    ]);
+    return [
+      ...income.map((item) => ['Income', item.date.toISOString().slice(0, 10), item.client.name, item.description ?? '', money(item.amount), item.currency, item.paymentMethod, item.frequency]),
+      ...expenses.map((item) => ['Expense', item.date.toISOString().slice(0, 10), item.vendor ?? '', item.title, money(item.amount), item.currency, item.paymentMethod, item.frequency]),
+      ...invoices.map((item) => ['Invoice', item.issueDate.toISOString().slice(0, 10), item.client.name, item.invoiceNumber, money(item.amount), item.currency, item.status, `Due ${item.dueDate.toISOString().slice(0, 10)}`])
+    ];
+  });
+  const header = ['Type', 'Date', 'Name', 'Description', 'Amount', 'Currency', 'Method/Status', 'Frequency/Notes'];
+  const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="scalora-report-${year}.csv"`);
+  return res.send(csv);
+}
+
+function currencyBreakdown(incomeRows: Income[], expenseRows: Expense[]) {
+  const currencies = new Map<string, { currency: string; income: number; expenses: number; profit: number }>();
+  for (const item of incomeRows) {
+    const row = currencies.get(item.currency) ?? { currency: item.currency, income: 0, expenses: 0, profit: 0 };
+    row.income += money(item.amount);
+    row.profit = row.income - row.expenses;
+    currencies.set(item.currency, row);
+  }
+  for (const item of expenseRows) {
+    const row = currencies.get(item.currency) ?? { currency: item.currency, income: 0, expenses: 0, profit: 0 };
+    row.expenses += money(item.amount);
+    row.profit = row.income - row.expenses;
+    currencies.set(item.currency, row);
+  }
+  return Array.from(currencies.values());
 }
 
 function totalBy<T extends Pick<Income | Expense, 'amount' | 'date' | 'frequency'>>(items: T[], getKey: (item: T) => string, start: Date, end: Date) {

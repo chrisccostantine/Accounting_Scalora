@@ -1,18 +1,24 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
+import { Download } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from 'recharts';
 import { PageHeader, Skeleton } from '../components/ui';
 import { useApiQuery } from '../hooks/useApi';
+import { api } from '../services/api';
 import type { Client, ExpenseCategory, Paginated } from '../types';
 import { labelize, money } from '../utils/format';
 
 interface Reports {
-  summary: { monthlyIncome: number; monthlyExpenses: number; monthlyProfit: number; yearlyProfit: number; profitMargin: number; averageMonthlyIncome: number; averageMonthlyExpenses: number };
+  summary: { monthlyIncome: number; monthlyExpenses: number; monthlyProfit: number; yearlyProfit: number; profitMargin: number; averageMonthlyIncome: number; averageMonthlyExpenses: number; invoiced: number; invoiceOutstanding: number; overdueInvoices: number };
   incomeByClient: { client: string; amount: number }[];
   expensesByCategory: { category: string; amount: number }[];
+  currencyBreakdown: { currency: string; income: number; expenses: number; profit: number }[];
   topPayingClients: { client: string; amount: number }[];
   charts: { month: string; income: number; expenses: number; profit: number }[];
   monthlyBreakdown: { month: string; income: number; expenses: number; profit: number; margin: number }[];
+  invoices: { invoiceNumber: string; client: string; dueDate: string; amount: number; paidAmount: number; outstanding: number; currency: string; status: string }[];
+  recurringSchedule: { type: string; name: string; frequency: string; amount: number; currency: string; nextAnchorDate: string }[];
+  cashFlow: { month: string; inflow: number; outflow: number; net: number; closingCash: number }[];
 }
 
 const colors = ['#2563EB', '#7C3AED', '#14B8A6', '#F59E0B', '#EF4444', '#64748B'];
@@ -30,9 +36,18 @@ export function ReportsPage() {
   if (clientId) params.set('clientId', clientId);
   if (category) params.set('category', category);
   const { data, isLoading } = useApiQuery<Reports>(['reports', year, month, clientId, category], `/reports?${params.toString()}`);
+  async function downloadCsv() {
+    const response = await api.get(`/reports/export?year=${year}`, { responseType: 'blob' });
+    const url = URL.createObjectURL(response.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `scalora-report-${year}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
   return (
     <>
-      <PageHeader title="Reports" />
+      <PageHeader title="Reports" action={<button className="btn-primary" onClick={downloadCsv}><Download size={16} /> Export CSV</button>} />
       <div className="panel mb-6 flex flex-wrap gap-3 p-4">
         <input className="input w-32" value={year} onChange={(event) => setYear(event.target.value)} />
         <select className="input w-48" value={month} onChange={(event) => setMonth(event.target.value)}>
@@ -64,6 +79,24 @@ export function ReportsPage() {
               <thead><tr><th className="table-th">Month</th><th className="table-th">Income</th><th className="table-th">Expenses</th><th className="table-th">Profit</th><th className="table-th">Margin</th></tr></thead>
               <tbody>{data.monthlyBreakdown.map((item) => <tr key={item.month}><td className="table-td">{item.month}</td><td className="table-td">{money(item.income)}</td><td className="table-td">{money(item.expenses)}</td><td className="table-td">{money(item.profit)}</td><td className="table-td">{item.margin.toFixed(0)}%</td></tr>)}</tbody>
             </table>
+          </section>
+          <section className="panel mt-6 overflow-x-auto">
+            <h2 className="p-5 pb-2 font-semibold">Currency Breakdown</h2>
+            <table className="w-full min-w-[640px]"><thead><tr><th className="table-th">Currency</th><th className="table-th">Income</th><th className="table-th">Expenses</th><th className="table-th">Profit</th></tr></thead><tbody>{data.currencyBreakdown.map((item) => <tr key={item.currency}><td className="table-td">{item.currency}</td><td className="table-td">{money(item.income, item.currency)}</td><td className="table-td">{money(item.expenses, item.currency)}</td><td className="table-td">{money(item.profit, item.currency)}</td></tr>)}</tbody></table>
+          </section>
+          <section className="mt-6 grid gap-4 xl:grid-cols-2">
+            <div className="panel overflow-x-auto">
+              <h2 className="p-5 pb-2 font-semibold">Invoice Aging</h2>
+              <table className="w-full min-w-[720px]"><thead><tr><th className="table-th">Invoice</th><th className="table-th">Client</th><th className="table-th">Amount</th><th className="table-th">Outstanding</th><th className="table-th">Status</th></tr></thead><tbody>{data.invoices.map((item) => <tr key={item.invoiceNumber}><td className="table-td">{item.invoiceNumber}</td><td className="table-td">{item.client}</td><td className="table-td">{money(item.amount, item.currency)}</td><td className="table-td">{money(item.outstanding, item.currency)}</td><td className="table-td">{labelize(item.status)}</td></tr>)}</tbody></table>
+            </div>
+            <div className="panel overflow-x-auto">
+              <h2 className="p-5 pb-2 font-semibold">Recurring Schedule</h2>
+              <table className="w-full min-w-[680px]"><thead><tr><th className="table-th">Type</th><th className="table-th">Name</th><th className="table-th">Frequency</th><th className="table-th">Amount</th></tr></thead><tbody>{data.recurringSchedule.map((item) => <tr key={`${item.type}-${item.name}-${item.amount}`}><td className="table-td">{item.type}</td><td className="table-td">{item.name}</td><td className="table-td">{labelize(item.frequency)}</td><td className="table-td">{money(item.amount, item.currency)}</td></tr>)}</tbody></table>
+            </div>
+          </section>
+          <section className="panel mt-6 overflow-x-auto">
+            <h2 className="p-5 pb-2 font-semibold">Cash Flow</h2>
+            <table className="w-full min-w-[720px]"><thead><tr><th className="table-th">Month</th><th className="table-th">Inflow</th><th className="table-th">Outflow</th><th className="table-th">Net</th><th className="table-th">Closing Cash</th></tr></thead><tbody>{data.cashFlow.map((item) => <tr key={item.month}><td className="table-td">{item.month}</td><td className="table-td">{money(item.inflow)}</td><td className="table-td">{money(item.outflow)}</td><td className="table-td">{money(item.net)}</td><td className="table-td">{money(item.closingCash)}</td></tr>)}</tbody></table>
           </section>
         </>
       )}

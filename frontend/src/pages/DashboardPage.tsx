@@ -2,14 +2,16 @@ import type { ReactElement } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { EmptyState, PageHeader, Skeleton } from '../components/ui';
 import { useApiQuery } from '../hooks/useApi';
-import type { Client, Expense, Income } from '../types';
-import { labelize, money } from '../utils/format';
+import type { ActivityLog, Client, Expense, Income, Invoice } from '../types';
+import { isoDate, labelize, money } from '../utils/format';
 
 interface Dashboard {
-  cards: { totalIncome: number; totalExpenses: number; netProfit: number; activeClients: number; collected: number; pending: number; expectedRevenue: number; collectionRate: number; profitMargin: number; ownerAdvanceOutstanding: number };
+  cards: { totalIncome: number; totalExpenses: number; netProfit: number; activeClients: number; collected: number; pending: number; expectedRevenue: number; collectionRate: number; profitMargin: number; ownerAdvanceOutstanding: number; invoicedRevenue: number; invoiceCollected: number };
   topClients: { client: string; amount: number }[];
   topExpenseCategories: { category: string; amount: number }[];
   attention: string[];
+  openInvoices: Invoice[];
+  activity: ActivityLog[];
   recentIncome: Income[];
   recentExpenses: Expense[];
   recentClients: Client[];
@@ -23,6 +25,7 @@ export function DashboardPage() {
 
   const cards = [
     ['Expected Revenue', money(data.cards.expectedRevenue)],
+    ['Invoiced This Month', money(data.cards.invoicedRevenue)],
     ['Collected This Month', money(data.cards.collected)],
     ['Pending Payments', money(data.cards.pending)],
     ['Expenses This Month', money(data.cards.totalExpenses)],
@@ -62,6 +65,10 @@ export function DashboardPage() {
         <Recent title="Top Clients This Month" rows={data.topClients.map((item) => [item.client, money(item.amount)])} />
         <Recent title="Top Expense Categories" rows={data.topExpenseCategories.map((item) => [labelize(item.category), money(item.amount)])} />
         <Recent title="Recent Clients" rows={data.recentClients.map((item) => [item.name, labelize(item.status)])} />
+      </section>
+      <section className="mt-6 grid gap-4 xl:grid-cols-2">
+        <Recent title="Open Invoices" rows={data.openInvoices.map((item) => [item.invoiceNumber, `${item.client?.name ?? 'Client'} - ${money(item.outstanding ?? 0, item.currency)} due ${isoDate(item.dueDate)}`])} />
+        <Recent title="Latest Activity" rows={data.activity.map((item) => [item.title, labelize(item.action)])} />
       </section>
       <section className="mt-6 grid gap-4 xl:grid-cols-2">
         <Recent title="Recent Income" rows={data.recentIncome.map((item) => [item.client?.name ?? 'Client', money(item.amount, item.currency)])} />

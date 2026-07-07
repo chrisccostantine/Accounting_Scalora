@@ -24,6 +24,7 @@ export interface Income {
   id: string;
   clientId: string;
   client?: Client;
+  invoiceId?: string;
   amount: number;
   currency: string;
   date: string;
@@ -32,6 +33,59 @@ export interface Income {
   referenceNumber?: string;
   description?: string;
   invoiceNumber?: string;
+}
+
+export type InvoiceStatus = 'DRAFT' | 'SENT' | 'PARTIAL' | 'PAID' | 'OVERDUE' | 'CANCELLED';
+
+export interface InvoicePayment {
+  id: string;
+  invoiceId: string;
+  amount: number;
+  currency: string;
+  date: string;
+  paymentMethod: PaymentMethod;
+  referenceNumber?: string;
+  notes?: string;
+}
+
+export interface Invoice {
+  id: string;
+  clientId: string;
+  client?: Client;
+  invoiceNumber: string;
+  amount: number;
+  paidAmount: number;
+  outstanding?: number;
+  currency: string;
+  issueDate: string;
+  dueDate: string;
+  status: InvoiceStatus;
+  computedStatus?: InvoiceStatus;
+  description?: string;
+  notes?: string;
+  payments: InvoicePayment[];
+}
+
+export type AttachmentEntityType = 'CLIENT' | 'INCOME' | 'EXPENSE' | 'INVOICE' | 'ADVANCE';
+
+export interface Attachment {
+  id: string;
+  entityType: AttachmentEntityType;
+  entityId: string;
+  title: string;
+  url: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ActivityLog {
+  id: string;
+  action: 'CREATED' | 'UPDATED' | 'DELETED' | 'PAID' | 'ATTACHED';
+  entityType: string;
+  entityId?: string;
+  title: string;
+  details?: string;
+  createdAt: string;
 }
 
 export interface Expense {

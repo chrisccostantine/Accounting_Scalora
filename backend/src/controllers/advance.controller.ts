@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ok, pagination } from '../utils/api.js';
+import { recordActivity } from '../services/activity.service.js';
 
 const money = (value: unknown) => Number(value ?? 0);
 
@@ -38,16 +39,19 @@ export async function listAdvances(req: Request, res: Response) {
 
 export async function createAdvance(req: Request, res: Response) {
   const item = await prisma.ownerAdvance.create({ data: req.body, include: { repayments: true } });
+  await recordActivity({ action: 'CREATED', entityType: 'ADVANCE', entityId: item.id, title: `Owner advance ${item.title} created`, details: String(item.amount) });
   return ok(res, 'Owner advance created', withTotals(item), 201);
 }
 
 export async function updateAdvance(req: Request, res: Response) {
   const item = await prisma.ownerAdvance.update({ where: { id: param(req.params.id) }, data: req.body, include: { repayments: true } });
+  await recordActivity({ action: 'UPDATED', entityType: 'ADVANCE', entityId: item.id, title: `Owner advance ${item.title} updated` });
   return ok(res, 'Owner advance updated', withTotals(item));
 }
 
 export async function deleteAdvance(req: Request, res: Response) {
   await prisma.ownerAdvance.delete({ where: { id: param(req.params.id) } }).catch(() => null);
+  await recordActivity({ action: 'DELETED', entityType: 'ADVANCE', entityId: param(req.params.id), title: 'Owner advance deleted' });
   return ok(res, 'Owner advance deleted');
 }
 
@@ -55,6 +59,7 @@ export async function createRepayment(req: Request, res: Response) {
   const advanceId = param(req.params.id);
   const repayment = await prisma.advanceRepayment.create({ data: { ...req.body, advanceId } });
   await syncAdvanceStatus(advanceId);
+  await recordActivity({ action: 'PAID', entityType: 'ADVANCE', entityId: advanceId, title: 'Owner advance repayment recorded', details: String(repayment.amount) });
   return ok(res, 'Repayment recorded', repayment, 201);
 }
 

@@ -62,6 +62,31 @@ enum AdvanceStatus {
   PAID
 }
 
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum AttachmentEntityType {
+  CLIENT
+  INCOME
+  EXPENSE
+  INVOICE
+  ADVANCE
+}
+
+enum ActivityAction {
+  CREATED
+  UPDATED
+  DELETED
+  PAID
+  ATTACHED
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -86,6 +111,7 @@ model Client {
   contractStartDate DateTime
   notes             String?
   income            Income[]
+  invoices          Invoice[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -99,6 +125,8 @@ model Income {
   id              String        @id @default(cuid())
   clientId        String
   client          Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  invoiceId       String?
+  invoice         Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   amount          Decimal       @db.Decimal(12, 2)
   currency        String        @default("USD")
   date            DateTime
@@ -111,9 +139,52 @@ model Income {
   updatedAt       DateTime      @updatedAt
 
   @@index([clientId])
+  @@index([invoiceId])
   @@index([date])
   @@index([frequency])
   @@map("income")
+}
+
+model Invoice {
+  id            String           @id @default(cuid())
+  clientId      String
+  client        Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  invoiceNumber String           @unique
+  amount        Decimal          @db.Decimal(12, 2)
+  paidAmount    Decimal          @default(0) @db.Decimal(12, 2)
+  currency      String           @default("USD")
+  issueDate     DateTime
+  dueDate       DateTime
+  status        InvoiceStatus    @default(SENT)
+  description   String?
+  notes         String?
+  payments      InvoicePayment[]
+  income        Income[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("invoices")
+}
+
+model InvoicePayment {
+  id             String        @id @default(cuid())
+  invoiceId      String
+  invoice        Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount         Decimal       @db.Decimal(12, 2)
+  currency       String        @default("USD")
+  date           DateTime
+  paymentMethod  PaymentMethod
+  referenceNumber String?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([invoiceId])
+  @@index([date])
+  @@map("invoice_payments")
 }
 
 model Expense {
@@ -173,4 +244,32 @@ model AdvanceRepayment {
   @@index([advanceId])
   @@index([date])
   @@map("advance_repayments")
+}
+
+model Attachment {
+  id          String               @id @default(cuid())
+  entityType  AttachmentEntityType
+  entityId    String
+  title       String
+  url         String
+  notes       String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([entityType, entityId])
+  @@map("attachments")
+}
+
+model ActivityLog {
+  id          String         @id @default(cuid())
+  action      ActivityAction
+  entityType  String
+  entityId    String?
+  title       String
+  details     String?
+  createdAt   DateTime       @default(now())
+
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("activity_logs")
 }
