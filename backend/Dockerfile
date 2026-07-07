@@ -16,4 +16,5 @@ COPY package*.json ./
 COPY prisma ./prisma
 RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
+COPY src/assets ./dist/assets
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
