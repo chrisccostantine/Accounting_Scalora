@@ -24,6 +24,7 @@ function invoiceNumber(client: Client, periodStart: Date) {
 }
 
 function descriptionFor(client: Client, periodStart: Date, periodEnd: Date) {
+  if (client.invoiceDescription?.trim()) return client.invoiceDescription.trim();
   const service = client.services.map((item) => item.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())).join(', ');
   const month = periodStart.toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   return `${service} - ${month}`;

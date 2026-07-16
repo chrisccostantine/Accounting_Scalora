@@ -13,6 +13,7 @@ export const clientBody = z.object({
   currency: z.string().min(3).max(8).default('USD'),
   status: z.nativeEnum(ClientStatus).default(ClientStatus.ACTIVE),
   contractStartDate: dateString,
+  invoiceDescription: z.string().optional().nullable(),
   notes: z.string().optional().nullable()
 });
 

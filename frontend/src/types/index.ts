@@ -16,6 +16,7 @@ export interface Client {
   currency: string;
   status: ClientStatus;
   contractStartDate: string;
+  invoiceDescription?: string;
   notes?: string;
   createdAt: string;
 }

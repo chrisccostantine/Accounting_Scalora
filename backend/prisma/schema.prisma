@@ -109,6 +109,7 @@ model Client {
   currency          String        @default("USD")
   status            ClientStatus  @default(ACTIVE)
   contractStartDate DateTime
+  invoiceDescription String?
   notes             String?
   income            Income[]
   invoices          Invoice[]

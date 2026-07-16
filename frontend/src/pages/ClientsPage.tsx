@@ -12,7 +12,7 @@ import { isoDate, labelize, money } from '../utils/format';
 const services: ClientService[] = ['META_ADS', 'TIKTOK_ADS', 'GOOGLE_ADS', 'SOCIAL_MEDIA_MANAGEMENT', 'CONTENT_CREATION', 'SHOPIFY_STORE', 'WEBSITE_DEVELOPMENT', 'WEB_APPLICATION', 'MOBILE_APPLICATION', 'BRANDING', 'OTHER'];
 const statuses: ClientStatus[] = ['ACTIVE', 'PAUSED', 'COMPLETED'];
 const frequencies: PaymentFrequency[] = ['ONE_TIME', 'MONTHLY', 'YEARLY'];
-const schema = z.object({ name: z.string().min(1), company: z.string().optional(), phone: z.string().optional(), email: z.string().optional(), services: z.array(z.enum(services as [ClientService, ...ClientService[]])).min(1, 'Select at least one service'), monthlyFee: z.coerce.number().nonnegative(), billingFrequency: z.enum(frequencies as [PaymentFrequency, ...PaymentFrequency[]]), currency: z.string().default('USD'), status: z.enum(statuses as [ClientStatus, ...ClientStatus[]]), contractStartDate: z.string(), notes: z.string().optional() });
+const schema = z.object({ name: z.string().min(1), company: z.string().optional(), phone: z.string().optional(), email: z.string().optional(), services: z.array(z.enum(services as [ClientService, ...ClientService[]])).min(1, 'Select at least one service'), monthlyFee: z.coerce.number().nonnegative(), billingFrequency: z.enum(frequencies as [PaymentFrequency, ...PaymentFrequency[]]), currency: z.string().default('USD'), status: z.enum(statuses as [ClientStatus, ...ClientStatus[]]), contractStartDate: z.string(), invoiceDescription: z.string().optional(), notes: z.string().optional() });
 type FormValues = z.infer<typeof schema>;
 
 export function ClientsPage() {
@@ -59,6 +59,7 @@ function ClientModal({ client, onClose }: { client: Client | null; onClose: () =
         <Field label="Billing Type"><select className="input" {...register('billingFrequency')}>{frequencies.map((item) => <option key={item} value={item}>{labelize(item)}</option>)}</select></Field>
         <Field label="Currency"><input className="input" {...register('currency')} /></Field>
         <Field label="Contract Start"><input className="input" type="date" {...register('contractStartDate')} /></Field>
+        <Field label="Invoice Description"><textarea className="input min-h-24" placeholder="Optional description shown on generated invoices" {...register('invoiceDescription')} /></Field>
         <Field label="Notes"><textarea className="input min-h-24" {...register('notes')} /></Field>
         <button className="btn-primary md:col-span-2" disabled={save.isPending}>Save</button>
       </form>

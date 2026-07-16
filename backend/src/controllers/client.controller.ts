@@ -5,7 +5,11 @@ import { fail, ok, pagination } from '../utils/api.js';
 import { recordActivity } from '../services/activity.service.js';
 
 function cleanBody(body: Record<string, unknown>) {
-  return { ...body, email: body.email === '' ? null : body.email };
+  return {
+    ...body,
+    email: body.email === '' ? null : body.email,
+    invoiceDescription: body.invoiceDescription === '' ? null : body.invoiceDescription
+  };
 }
 
 function param(value: string | string[] | undefined) {
