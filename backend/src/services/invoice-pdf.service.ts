@@ -129,7 +129,7 @@ export function renderInvoicePdf(invoice: PdfInvoice) {
   const outstanding = Math.max(0, Number(invoice.amount) - Number(invoice.paidAmount));
   const paidApplied = Math.min(Number(invoice.paidAmount), Number(invoice.amount));
   const credit = Math.max(0, Number(invoice.paidAmount) - Number(invoice.amount));
-  const service = invoice.client.service.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const service = invoice.client.services.map((item) => item.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())).join(', ');
   const invoiceMonth = month(invoice.billingPeriodStart ?? invoice.issueDate);
   const businessName = invoice.client.company || invoice.client.name;
   const description = invoice.description && !invoice.description.toLowerCase().includes('billing period') ? invoice.description : `${service} - ${invoiceMonth}`;

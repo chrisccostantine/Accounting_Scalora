@@ -10,7 +10,7 @@ export interface Client {
   company?: string;
   phone?: string;
   email?: string;
-  service: ClientService;
+  services: ClientService[];
   monthlyFee: number;
   billingFrequency: PaymentFrequency;
   currency: string;

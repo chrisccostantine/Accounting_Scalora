@@ -103,7 +103,7 @@ model Client {
   company           String?
   phone             String?
   email             String?
-  service           ClientService
+  services          ClientService[]
   monthlyFee        Decimal       @db.Decimal(12, 2)
   billingFrequency  PaymentFrequency @default(MONTHLY)
   currency          String        @default("USD")
@@ -116,7 +116,6 @@ model Client {
   updatedAt         DateTime      @updatedAt
 
   @@index([status])
-  @@index([service])
   @@index([billingFrequency])
   @@map("clients")
 }

@@ -7,7 +7,7 @@ export const clientBody = z.object({
   company: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
   email: z.string().email().optional().nullable().or(z.literal('')),
-  service: z.nativeEnum(ClientService),
+  services: z.array(z.nativeEnum(ClientService)).min(1, 'Select at least one service'),
   monthlyFee: decimal,
   billingFrequency: z.nativeEnum(PaymentFrequency).default(PaymentFrequency.MONTHLY),
   currency: z.string().min(3).max(8).default('USD'),

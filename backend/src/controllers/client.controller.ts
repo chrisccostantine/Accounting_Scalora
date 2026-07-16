@@ -25,7 +25,7 @@ export async function listClients(req: Request, res: Response) {
       ]
     }),
     ...(req.query.status ? { status: String(req.query.status) as never } : {}),
-    ...(req.query.service ? { service: String(req.query.service) as never } : {})
+    ...(req.query.service ? { services: { has: String(req.query.service) as never } } : {})
   };
   const [items, total] = await Promise.all([
     prisma.client.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
