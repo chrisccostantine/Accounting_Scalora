@@ -61,7 +61,7 @@ export async function dashboard(req: Request, res: Response) {
     prisma.income.findMany({ where: incomeActiveInRange, include: { client: true } }),
     prisma.expense.findMany({ where: expenseActiveInRange }),
     prisma.ownerAdvance.findMany({ where: { status: 'OPEN' }, include: { repayments: true } }),
-    prisma.invoice.findMany({ where: { dueDate: { gte: start, lt: end }, status: { not: 'CANCELLED' } }, include: { client: true, payments: true } }),
+    prisma.invoice.findMany({ where: { OR: [{ billingPeriodStart: { gte: start, lt: end } }, { billingPeriodStart: null, issueDate: { gte: start, lt: end } }], status: { not: 'CANCELLED' } }, include: { client: true, payments: true } }),
     prisma.invoice.findMany({ where: { status: { in: ['SENT', 'PARTIAL', 'OVERDUE'] } }, include: { client: true }, orderBy: { dueDate: 'asc' }, take: 8 }),
     prisma.activityLog.findMany({ orderBy: { createdAt: 'desc' }, take: 6 })
   ]);
@@ -135,7 +135,7 @@ export async function reports(req: Request, res: Response) {
   const clients = await prisma.client.findMany({ where: { id: { in: incomeByClient.map((item) => item.key) } } });
   const byClient = incomeByClient.map((item) => ({ client: clients.find((client) => client.id === item.key)?.name ?? 'Unknown', amount: item.amount }));
   const [invoices, recurringIncome, recurringExpenses] = await Promise.all([
-    prisma.invoice.findMany({ where: { dueDate: { gte: start, lt: end }, status: { not: 'CANCELLED' } }, include: { client: true }, orderBy: { dueDate: 'asc' } }),
+    prisma.invoice.findMany({ where: { OR: [{ billingPeriodStart: { gte: start, lt: end } }, { billingPeriodStart: null, issueDate: { gte: start, lt: end } }], status: { not: 'CANCELLED' } }, include: { client: true }, orderBy: { dueDate: 'asc' } }),
     prisma.income.findMany({ where: { frequency: { in: ['MONTHLY', 'YEARLY'] } }, include: { client: true }, orderBy: { date: 'asc' } }),
     prisma.expense.findMany({ where: { frequency: { in: ['MONTHLY', 'YEARLY'] } }, orderBy: { date: 'asc' } })
   ]);
