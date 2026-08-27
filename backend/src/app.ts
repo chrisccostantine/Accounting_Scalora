@@ -15,11 +15,12 @@ import { invoiceRouter } from './routes/invoice.routes.js';
 import { attachmentRouter } from './routes/attachment.routes.js';
 import { activityRouter } from './routes/activity.routes.js';
 import { reportRouter } from './routes/report.routes.js';
+import { quoteRouter } from './routes/quote.routes.js';
 
 export const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: env.CLIENT_URL, credentials: true, exposedHeaders: ['X-Invoice-Filename'] }));
+app.use(cors({ origin: env.CLIENT_URL, credentials: true, exposedHeaders: ['X-Invoice-Filename', 'X-Quote-Filename'] }));
 app.use(express.json({ limit: '1mb' }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 500 }));
 
@@ -31,6 +32,7 @@ app.use('/api/income', requireAuth, incomeRouter);
 app.use('/api/expenses', requireAuth, expenseRouter);
 app.use('/api/advances', requireAuth, advanceRouter);
 app.use('/api/invoices', requireAuth, invoiceRouter);
+app.use('/api/quotes', requireAuth, quoteRouter);
 app.use('/api/attachments', requireAuth, attachmentRouter);
 app.use('/api/activity', requireAuth, activityRouter);
 app.use((_req, res) => fail(res, 'Route not found', 404));

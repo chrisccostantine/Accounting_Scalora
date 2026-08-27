@@ -70,6 +70,34 @@ export interface Invoice {
   payments: InvoicePayment[];
 }
 
+export type QuoteStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+
+export interface QuoteItem {
+  id?: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface Quote {
+  id: string;
+  clientId: string;
+  client?: Client;
+  quoteNumber: string;
+  issueDate: string;
+  validUntil: string;
+  currency: string;
+  status: QuoteStatus;
+  discount: number;
+  taxRate: number;
+  notes?: string;
+  terms?: string;
+  items: QuoteItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+}
+
 export type AttachmentEntityType = 'CLIENT' | 'INCOME' | 'EXPENSE' | 'INVOICE' | 'ADVANCE';
 
 export interface Attachment {

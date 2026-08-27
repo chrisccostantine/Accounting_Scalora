@@ -13,6 +13,7 @@ import { IncomePage } from './pages/IncomePage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ReportsPage } from './pages/ReportsPage';
+import { QuotesPage } from './pages/QuotesPage';
 
 export function App() {
   return (
@@ -25,6 +26,7 @@ export function App() {
           <Route path="income" element={<IncomePage />} />
           <Route path="expenses" element={<ExpensesPage />} />
           <Route path="invoices" element={<InvoicesPage />} />
+          <Route path="quotes" element={<QuotesPage />} />
           <Route path="advances" element={<AdvancesPage />} />
           <Route path="cash-flow" element={<CashFlowPage />} />
           <Route path="attachments" element={<AttachmentsPage />} />

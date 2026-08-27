@@ -6,13 +6,13 @@ import { inflateSync, deflateSync } from 'node:zlib';
 
 type PdfInvoice = Invoice & { client: Client };
 type PdfObject = string | Buffer;
-type PngImage = { width: number; height: number; rgb: Buffer; alpha?: Buffer };
+export type PngImage = { width: number; height: number; rgb: Buffer; alpha?: Buffer };
 
-function money(value: unknown, currency = 'USD') {
+export function pdfMoney(value: unknown, currency = 'USD') {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(value ?? 0));
 }
 
-function date(value: Date | null) {
+export function pdfDate(value: Date | null) {
   return value ? value.toISOString().slice(0, 10) : '-';
 }
 
@@ -24,15 +24,15 @@ function escapePdf(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
 
-function text(x: number, y: number, size: number, value: string) {
+export function pdfText(x: number, y: number, size: number, value: string) {
   return `BT /F1 ${size} Tf ${x} ${y} Td (${escapePdf(value)}) Tj ET`;
 }
 
-function color(r: number, g: number, b: number) {
+export function pdfColor(r: number, g: number, b: number) {
   return `${r} ${g} ${b} rg`;
 }
 
-function line(x1: number, y1: number, x2: number, y2: number) {
+export function pdfLine(x1: number, y1: number, x2: number, y2: number) {
   return `${x1} ${y1} m ${x2} ${y2} l S`;
 }
 
@@ -118,7 +118,7 @@ function parsePng(buffer: Buffer): PngImage | null {
   return { width: outWidth, height: outHeight, rgb, alpha };
 }
 
-function loadLogo() {
+export function loadLogo() {
   const assetPath = join(dirname(fileURLToPath(import.meta.url)), '../assets/scalora-logo.png');
   if (!existsSync(assetPath)) return null;
   return parsePng(readFileSync(assetPath));
@@ -136,46 +136,46 @@ export function renderInvoicePdf(invoice: PdfInvoice) {
   const content = [
     logo ? 'q 124 0 0 62 48 742 cm /Logo Do Q' : '0.12 0.38 0.92 rg 48 746 44 44 re f',
     logo ? '' : '1 1 1 rg',
-    logo ? '' : text(61, 761, 24, 'S'),
-    color(0, 0, 0),
-    text(430, 770, 28, 'INVOICE'),
-    color(0.35, 0.39, 0.48),
-    text(430, 748, 10, invoice.invoiceNumber),
-    color(0, 0, 0),
-    line(48, 724, 548, 724),
-    color(0.35, 0.39, 0.48),
-    text(48, 690, 10, 'CLIENT'),
-    color(0, 0, 0),
-    text(48, 670, 18, businessName),
-    ...(invoice.client.company && invoice.client.name !== invoice.client.company ? [color(0.35, 0.39, 0.48), text(48, 652, 10, invoice.client.name)] : []),
-    color(0.35, 0.39, 0.48),
-    text(360, 690, 10, 'DETAILS'),
-    color(0, 0, 0),
-    text(360, 670, 10, `Invoice Date: ${date(invoice.issueDate)}`),
-    text(360, 654, 10, `Due Date: ${date(invoice.dueDate)}`),
-    text(360, 638, 10, `Month: ${invoiceMonth}`),
-    text(360, 622, 10, `Status: ${invoice.status}`),
+    logo ? '' : pdfText(61, 761, 24, 'S'),
+    pdfColor(0, 0, 0),
+    pdfText(430, 770, 28, 'INVOICE'),
+    pdfColor(0.35, 0.39, 0.48),
+    pdfText(430, 748, 10, invoice.invoiceNumber),
+    pdfColor(0, 0, 0),
+    pdfLine(48, 724, 548, 724),
+    pdfColor(0.35, 0.39, 0.48),
+    pdfText(48, 690, 10, 'CLIENT'),
+    pdfColor(0, 0, 0),
+    pdfText(48, 670, 18, businessName),
+    ...(invoice.client.company && invoice.client.name !== invoice.client.company ? [pdfColor(0.35, 0.39, 0.48), pdfText(48, 652, 10, invoice.client.name)] : []),
+    pdfColor(0.35, 0.39, 0.48),
+    pdfText(360, 690, 10, 'DETAILS'),
+    pdfColor(0, 0, 0),
+    pdfText(360, 670, 10, `Invoice Date: ${pdfDate(invoice.issueDate)}`),
+    pdfText(360, 654, 10, `Due Date: ${pdfDate(invoice.dueDate)}`),
+    pdfText(360, 638, 10, `Month: ${invoiceMonth}`),
+    pdfText(360, 622, 10, `Status: ${invoice.status}`),
     '0.95 0.97 1 rg 48 555 500 36 re f',
-    color(0.12, 0.16, 0.24),
-    text(62, 569, 11, 'Service'),
-    text(414, 569, 11, 'Amount'),
+    pdfColor(0.12, 0.16, 0.24),
+    pdfText(62, 569, 11, 'Service'),
+    pdfText(414, 569, 11, 'Amount'),
     '0.75 0.79 0.86 RG',
-    line(48, 555, 548, 555),
-    color(0, 0, 0),
-    text(62, 526, 11, description),
-    text(414, 526, 11, money(invoice.amount, invoice.currency)),
+    pdfLine(48, 555, 548, 555),
+    pdfColor(0, 0, 0),
+    pdfText(62, 526, 11, description),
+    pdfText(414, 526, 11, pdfMoney(invoice.amount, invoice.currency)),
     '0.75 0.79 0.86 RG',
-    line(48, 504, 548, 504),
-    color(0, 0, 0),
-    text(338, 466, 11, 'Subtotal'),
-    text(438, 466, 11, money(invoice.amount, invoice.currency)),
-    text(338, 444, 11, 'Paid'),
-    text(438, 444, 11, money(paidApplied, invoice.currency)),
-    ...(credit > 0 ? [text(338, 422, 11, 'Credit'), text(438, 422, 11, money(credit, invoice.currency))] : []),
-    color(0.1, 0.37, 0.92),
-    text(338, credit > 0 ? 392 : 414, 14, 'Balance Due'),
-    text(438, credit > 0 ? 392 : 414, 14, money(outstanding, invoice.currency)),
-    color(0, 0, 0)
+    pdfLine(48, 504, 548, 504),
+    pdfColor(0, 0, 0),
+    pdfText(338, 466, 11, 'Subtotal'),
+    pdfText(438, 466, 11, pdfMoney(invoice.amount, invoice.currency)),
+    pdfText(338, 444, 11, 'Paid'),
+    pdfText(438, 444, 11, pdfMoney(paidApplied, invoice.currency)),
+    ...(credit > 0 ? [pdfText(338, 422, 11, 'Credit'), pdfText(438, 422, 11, pdfMoney(credit, invoice.currency))] : []),
+    pdfColor(0.1, 0.37, 0.92),
+    pdfText(338, credit > 0 ? 392 : 414, 14, 'Balance Due'),
+    pdfText(438, credit > 0 ? 392 : 414, 14, pdfMoney(outstanding, invoice.currency)),
+    pdfColor(0, 0, 0)
   ].join('\n');
 
   const resources = logo ? '<< /Font << /F1 4 0 R >> /XObject << /Logo 6 0 R >> >>' : '<< /Font << /F1 4 0 R >> >>';
