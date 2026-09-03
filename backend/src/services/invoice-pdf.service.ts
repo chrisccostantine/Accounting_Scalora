@@ -28,6 +28,52 @@ export function pdfText(x: number, y: number, size: number, value: string) {
   return `BT /F1 ${size} Tf ${x} ${y} Td (${escapePdf(value)}) Tj ET`;
 }
 
+function approximateHelveticaWidth(value: string, size: number) {
+  return [...value].reduce((width, character) => {
+    if (character === ' ') return width + size * 0.28;
+    if (/[ilI.,'`:;!|]/.test(character)) return width + size * 0.25;
+    if (/[mwMW@%&]/.test(character)) return width + size * 0.82;
+    if (/[A-Z0-9]/.test(character)) return width + size * 0.62;
+    return width + size * 0.5;
+  }, 0);
+}
+
+/** Wraps PDF text while retaining user-entered newlines and leading indentation. */
+export function wrapPdfText(value: string, size: number, maxWidth: number) {
+  return value.replace(/\r\n?/g, '\n').split('\n').flatMap((sourceLine) => {
+    const expandedLine = sourceLine.replace(/\t/g, '    ');
+    if (!expandedLine) return [''];
+
+    let indentation = expandedLine.match(/^\s*/)?.[0] ?? '';
+    while (indentation && approximateHelveticaWidth(indentation, size) > maxWidth / 2) indentation = indentation.slice(0, -1);
+
+    const lines: string[] = [];
+    let remaining = expandedLine.trimStart();
+
+    if (!remaining) return [indentation];
+
+    while (remaining) {
+      const prefix = indentation;
+      if (approximateHelveticaWidth(`${prefix}${remaining}`, size) <= maxWidth) {
+        lines.push(`${prefix}${remaining}`.trimEnd());
+        break;
+      }
+
+      const availableWidth = maxWidth - approximateHelveticaWidth(prefix, size);
+      let fittingLength = 0;
+      while (fittingLength < remaining.length && approximateHelveticaWidth(remaining.slice(0, fittingLength + 1), size) <= availableWidth) fittingLength += 1;
+
+      const candidate = remaining.slice(0, fittingLength);
+      const whitespaceBreak = candidate.lastIndexOf(' ');
+      const breakAt = whitespaceBreak > 0 ? whitespaceBreak : Math.max(1, fittingLength);
+      lines.push(`${prefix}${remaining.slice(0, breakAt).trimEnd()}`);
+      remaining = remaining.slice(breakAt).trimStart();
+    }
+
+    return lines;
+  });
+}
+
 export function pdfColor(r: number, g: number, b: number) {
   return `${r} ${g} ${b} rg`;
 }
@@ -133,6 +179,14 @@ export function renderInvoicePdf(invoice: PdfInvoice) {
   const invoiceMonth = month(invoice.billingPeriodStart ?? invoice.issueDate);
   const businessName = invoice.client.company || invoice.client.name;
   const description = invoice.description && !invoice.description.toLowerCase().includes('billing period') ? invoice.description : `${service} - ${invoiceMonth}`;
+  const descriptionFontSize = 10;
+  const descriptionLineHeight = 14;
+  const descriptionLines = wrapPdfText(description, descriptionFontSize, 325);
+  const descriptionY = 526;
+  const descriptionBottom = descriptionY - Math.max(0, descriptionLines.length - 1) * descriptionLineHeight;
+  const serviceRowBottom = Math.min(504, descriptionBottom - 18);
+  const totalsY = serviceRowBottom - 38;
+  const balanceY = totalsY - (credit > 0 ? 74 : 52);
   const content = [
     logo ? 'q 124 0 0 62 48 742 cm /Logo Do Q' : '0.12 0.38 0.92 rg 48 746 44 44 re f',
     logo ? '' : '1 1 1 rg',
@@ -162,19 +216,19 @@ export function renderInvoicePdf(invoice: PdfInvoice) {
     '0.75 0.79 0.86 RG',
     pdfLine(48, 555, 548, 555),
     pdfColor(0, 0, 0),
-    pdfText(62, 526, 11, description),
-    pdfText(414, 526, 11, pdfMoney(invoice.amount, invoice.currency)),
+    ...descriptionLines.map((line, index) => pdfText(62, descriptionY - index * descriptionLineHeight, descriptionFontSize, line)),
+    pdfText(414, descriptionY, 11, pdfMoney(invoice.amount, invoice.currency)),
     '0.75 0.79 0.86 RG',
-    pdfLine(48, 504, 548, 504),
+    pdfLine(48, serviceRowBottom, 548, serviceRowBottom),
     pdfColor(0, 0, 0),
-    pdfText(338, 466, 11, 'Subtotal'),
-    pdfText(438, 466, 11, pdfMoney(invoice.amount, invoice.currency)),
-    pdfText(338, 444, 11, 'Paid'),
-    pdfText(438, 444, 11, pdfMoney(paidApplied, invoice.currency)),
-    ...(credit > 0 ? [pdfText(338, 422, 11, 'Credit'), pdfText(438, 422, 11, pdfMoney(credit, invoice.currency))] : []),
+    pdfText(338, totalsY, 11, 'Subtotal'),
+    pdfText(438, totalsY, 11, pdfMoney(invoice.amount, invoice.currency)),
+    pdfText(338, totalsY - 22, 11, 'Paid'),
+    pdfText(438, totalsY - 22, 11, pdfMoney(paidApplied, invoice.currency)),
+    ...(credit > 0 ? [pdfText(338, totalsY - 44, 11, 'Credit'), pdfText(438, totalsY - 44, 11, pdfMoney(credit, invoice.currency))] : []),
     pdfColor(0.1, 0.37, 0.92),
-    pdfText(338, credit > 0 ? 392 : 414, 14, 'Balance Due'),
-    pdfText(438, credit > 0 ? 392 : 414, 14, pdfMoney(outstanding, invoice.currency)),
+    pdfText(338, balanceY, 14, 'Balance Due'),
+    pdfText(438, balanceY, 14, pdfMoney(outstanding, invoice.currency)),
     pdfColor(0, 0, 0)
   ].join('\n');
 
