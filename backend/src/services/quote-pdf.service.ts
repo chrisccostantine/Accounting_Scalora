@@ -1,21 +1,21 @@
 import type { Client, Quote, QuoteItem } from '@prisma/client';
-import { rtlText } from 'bidi-shaper/pdfkit';
-import { existsSync } from 'node:fs';
+import fontkit from '@pdf-lib/fontkit';
+import { drawArabicText, measureArabicText } from 'arabic-bidi-shaper/pdf-lib';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import PDFDocument from 'pdfkit';
+import { PDFDocument, rgb, type PDFImage, type PDFFont, type PDFPage } from 'pdf-lib';
 import { pdfDate, pdfMoney } from './invoice-pdf.service.js';
 
 type PdfQuote = Quote & { client: Client; items: QuoteItem[] };
-type FlowLine = { value: string; color: string };
-type FontName = 'NotoSans' | 'NotoSansArabic';
+type FlowLine = { value: string; color: ReturnType<typeof rgb> };
 
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
 const LEFT = 48;
 const CONTENT_WIDTH = 500;
-const BOTTOM_MARGIN = 48;
-const ARABIC_PATTERN = /[\u0590-\u08FF\uFB1D-\uFDFD\uFE70-\uFEFC]/;
+const BOTTOM_MARGIN = 42;
+const RTL_PATTERN = /[\u0590-\u08FF\uFB1D-\uFDFD\uFE70-\uFEFC]/;
 
 function truncate(value: string, length: number) {
   return value.length > length ? `${value.slice(0, length - 3)}...` : value;
@@ -23,31 +23,22 @@ function truncate(value: string, length: number) {
 
 function isRtl(value: string) {
   const firstStrong = value.match(/[A-Za-z\u0590-\u08FF\uFB1D-\uFDFD\uFE70-\uFEFC]/)?.[0];
-  return Boolean(firstStrong && ARABIC_PATTERN.test(firstStrong));
+  return Boolean(firstStrong && RTL_PATTERN.test(firstStrong));
 }
 
-function splitFontRuns(value: string) {
-  const runs: { value: string; font: FontName }[] = [];
-  for (const character of value) {
-    const font: FontName = ARABIC_PATTERN.test(character) ? 'NotoSansArabic' : 'NotoSans';
-    const previous = runs.at(-1);
-    if (previous?.font === font) previous.value += character;
-    else runs.push({ value: character, font });
-  }
-  return runs;
+function drawText(page: PDFPage, font: PDFFont, value: string, x: number, y: number, size: number, width = CONTENT_WIDTH, color = rgb(0, 0, 0)) {
+  const rtl = isRtl(value);
+  drawArabicText(page, value, {
+    font,
+    size,
+    x: rtl ? x + width : x,
+    y,
+    color,
+    align: rtl ? 'right' : 'left'
+  });
 }
 
-function measureText(doc: PDFKit.PDFDocument, value: string, size: number) {
-  const width = splitFontRuns(rtlText(value)).reduce((total, run) => {
-    doc.font(run.font).fontSize(size);
-    return total + doc.widthOfString(run.value, { features: [] });
-  }, 0);
-  doc.font('NotoSans');
-  return width;
-}
-
-function wrapText(doc: PDFKit.PDFDocument, value: string, size: number, maxWidth: number) {
-  doc.fontSize(size);
+function wrapText(value: string, font: PDFFont, size: number, maxWidth: number) {
   return value.replace(/\r\n?/g, '\n').split('\n').flatMap((paragraph) => {
     if (!paragraph) return [''];
     const words = paragraph.replace(/\t/g, '    ').split(/\s+/);
@@ -56,7 +47,7 @@ function wrapText(doc: PDFKit.PDFDocument, value: string, size: number, maxWidth
 
     for (const word of words) {
       const candidate = line ? `${line} ${word}` : word;
-      if (measureText(doc, candidate, size) <= maxWidth) {
+      if (measureArabicText(candidate, font, size) <= maxWidth) {
         line = candidate;
         continue;
       }
@@ -65,7 +56,7 @@ function wrapText(doc: PDFKit.PDFDocument, value: string, size: number, maxWidth
 
       let fragment = '';
       for (const character of word) {
-        if (fragment && measureText(doc, `${fragment}${character}`, size) > maxWidth) {
+        if (fragment && measureArabicText(`${fragment}${character}`, font, size) > maxWidth) {
           lines.push(fragment);
           fragment = character;
         } else {
@@ -80,65 +71,38 @@ function wrapText(doc: PDFKit.PDFDocument, value: string, size: number, maxWidth
   });
 }
 
-function drawText(doc: PDFKit.PDFDocument, value: string, x: number, y: number, size: number, options: PDFKit.Mixins.TextOptions = {}) {
-  const width = options.width ?? CONTENT_WIDTH;
-  const runs = splitFontRuns(rtlText(value));
-  const textWidth = runs.reduce((total, run) => {
-    doc.font(run.font).fontSize(size);
-    return total + doc.widthOfString(run.value, { features: [] });
-  }, 0);
-  const alignment = options.align ?? (isRtl(value) ? 'right' : 'left');
-  let cursorX = alignment === 'right' ? x + width - textWidth : alignment === 'center' ? x + (width - textWidth) / 2 : x;
-
-  for (const run of runs) {
-    doc.font(run.font).fontSize(size);
-    doc.text(run.value, cursorX, y, { lineBreak: false, features: [] });
-    cursorX += doc.widthOfString(run.value, { features: [] });
-  }
-  doc.font('NotoSans');
-}
-
-function drawHeader(doc: PDFKit.PDFDocument, quote: PdfQuote, logoPath: string, continued = false) {
-  if (existsSync(logoPath)) {
-    doc.image(logoPath, LEFT, 38, { fit: [124, 62] });
+function drawHeader(page: PDFPage, font: PDFFont, quote: PdfQuote, logo: PDFImage | null, continued = false) {
+  if (logo) {
+    page.drawImage(logo, { x: LEFT, y: 742, width: 124, height: 62 });
   } else {
-    doc.fillColor('#1f61eb').rect(LEFT, 42, 44, 44).fill();
-    doc.fillColor('#ffffff').font('NotoSans').fontSize(24).text('S', 61, 51, { lineBreak: false });
+    page.drawRectangle({ x: LEFT, y: 746, width: 44, height: 44, color: rgb(0.12, 0.38, 0.92) });
+    drawText(page, font, 'S', 61, 761, 24, 20, rgb(1, 1, 1));
   }
 
-  doc.fillColor('#000000').fontSize(continued ? 20 : 27);
-  drawText(doc, continued ? 'PRICE QUOTE - CONTINUED' : 'PRICE QUOTE', continued ? 326 : 396, continued ? 54 : 50, continued ? 20 : 27, { width: continued ? 222 : 152 });
-  doc.fillColor('#596374').fontSize(10);
-  drawText(doc, quote.quoteNumber, 430, 83, 10, { width: 118 });
-  doc.strokeColor('#000000').moveTo(LEFT, continued ? 106 : 118).lineTo(548, continued ? 106 : 118).stroke();
+  drawText(page, font, continued ? 'PRICE QUOTE - CONTINUED' : 'PRICE QUOTE', continued ? 326 : 396, 770, continued ? 20 : 27, continued ? 222 : 152);
+  drawText(page, font, quote.quoteNumber, 430, 748, 10, 118, rgb(0.35, 0.39, 0.48));
+  page.drawLine({ start: { x: LEFT, y: 724 }, end: { x: 548, y: 724 }, thickness: 1, color: rgb(0, 0, 0) });
 }
 
-function addContinuationPage(doc: PDFKit.PDFDocument, quote: PdfQuote, logoPath: string) {
-  doc.addPage({ size: [PAGE_WIDTH, PAGE_HEIGHT], margin: 0 });
-  drawHeader(doc, quote, logoPath, true);
-  return 130;
+function addContinuationPage(document: PDFDocument, font: PDFFont, quote: PdfQuote, logo: PDFImage | null) {
+  const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  drawHeader(page, font, quote, logo, true);
+  return page;
 }
 
 export async function renderQuotePdf(quote: PdfQuote) {
   const serviceDirectory = dirname(fileURLToPath(import.meta.url));
   const bundledAssetDirectory = join(serviceDirectory, '../assets');
-  const assetDirectory = existsSync(join(bundledAssetDirectory, 'NotoSansArabic-Regular.ttf'))
+  const assetDirectory = existsSync(join(bundledAssetDirectory, 'DejaVuSans.ttf'))
     ? bundledAssetDirectory
     : join(serviceDirectory, '../../src/assets');
   const logoPath = join(assetDirectory, 'scalora-logo.png');
-  const fontPath = join(assetDirectory, 'NotoSansArabic-Regular.ttf');
-  const doc = new PDFDocument({ autoFirstPage: false, compress: true, margin: 0 });
-  const chunks: Buffer[] = [];
-  doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-  const completed = new Promise<Buffer>((resolve, reject) => {
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-  });
 
-  doc.registerFont('NotoSans', join(assetDirectory, 'NotoSans-Regular.ttf'));
-  doc.registerFont('NotoSansArabic', fontPath);
-  doc.font('NotoSans');
-  doc.addPage({ size: [PAGE_WIDTH, PAGE_HEIGHT], margin: 0 });
+  const document = await PDFDocument.create();
+  document.registerFontkit(fontkit);
+  const font = await document.embedFont(readFileSync(join(assetDirectory, 'DejaVuSans.ttf')), { subset: true });
+  const logo = existsSync(logoPath) ? await document.embedPng(readFileSync(logoPath)) : null;
+  let page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
   const subtotal = quote.items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0);
   const discount = Math.min(Number(quote.discount), subtotal);
@@ -146,81 +110,73 @@ export async function renderQuotePdf(quote: PdfQuote) {
   const total = subtotal - discount + tax;
   const businessName = quote.client.company || quote.client.name;
   const visibleItems = quote.items.slice(0, 8);
+  const muted = rgb(0.35, 0.39, 0.48);
 
-  drawHeader(doc, quote, logoPath);
-  doc.fillColor('#596374').fontSize(10);
-  drawText(doc, 'PREPARED FOR', LEFT, 145, 10, { width: 260 });
-  doc.fillColor('#000000').fontSize(18);
-  drawText(doc, truncate(businessName, 36), LEFT, 164, 18, { width: 260 });
+  drawHeader(page, font, quote, logo);
+  drawText(page, font, 'PREPARED FOR', LEFT, 690, 10, 260, muted);
+  drawText(page, font, truncate(businessName, 36), LEFT, 670, 18, 260);
   if (quote.client.company && quote.client.name !== quote.client.company) {
-    doc.fillColor('#596374').fontSize(10);
-    drawText(doc, quote.client.name, LEFT, 190, 10, { width: 260 });
+    drawText(page, font, quote.client.name, LEFT, 652, 10, 260, muted);
   }
 
-  doc.fillColor('#596374').fontSize(10);
-  drawText(doc, 'QUOTE DETAILS', 360, 145, 10, { width: 188 });
-  doc.fillColor('#000000');
-  drawText(doc, `Issue Date: ${pdfDate(quote.issueDate)}`, 360, 165, 10, { width: 188 });
-  drawText(doc, `Valid Until: ${pdfDate(quote.validUntil)}`, 360, 181, 10, { width: 188 });
-  drawText(doc, `Status: ${quote.status}`, 360, 197, 10, { width: 188 });
+  drawText(page, font, 'QUOTE DETAILS', 360, 690, 10, 188, muted);
+  drawText(page, font, `Issue Date: ${pdfDate(quote.issueDate)}`, 360, 670, 10, 188);
+  drawText(page, font, `Valid Until: ${pdfDate(quote.validUntil)}`, 360, 654, 10, 188);
+  drawText(page, font, `Status: ${quote.status}`, 360, 638, 10, 188);
 
-  doc.fillColor('#f2f7ff').rect(LEFT, 251, CONTENT_WIDTH, 36).fill();
-  doc.fillColor('#1f293d').fontSize(10);
-  drawText(doc, 'Description', 62, 264, 10, { width: 270 });
-  drawText(doc, 'Qty', 350, 264, 10, { width: 45 });
-  drawText(doc, 'Unit Price', 408, 264, 10, { width: 75 });
-  drawText(doc, 'Total', 492, 264, 10, { width: 56 });
-  doc.strokeColor('#bec9db').moveTo(LEFT, 287).lineTo(548, 287).stroke();
+  page.drawRectangle({ x: LEFT, y: 555, width: CONTENT_WIDTH, height: 36, color: rgb(0.95, 0.97, 1) });
+  const heading = rgb(0.12, 0.16, 0.24);
+  drawText(page, font, 'Description', 62, 569, 10, 270, heading);
+  drawText(page, font, 'Qty', 350, 569, 10, 45, heading);
+  drawText(page, font, 'Unit Price', 408, 569, 10, 75, heading);
+  drawText(page, font, 'Total', 492, 569, 10, 56, heading);
+  page.drawLine({ start: { x: LEFT, y: 555 }, end: { x: 548, y: 555 }, thickness: 1, color: rgb(0.75, 0.79, 0.86) });
 
   visibleItems.forEach((item, index) => {
-    const y = 305 + index * 28;
-    doc.fillColor('#000000').fontSize(10);
-    drawText(doc, truncate(item.description, 45), 62, y, 10, { width: 270 });
-    drawText(doc, String(Number(item.quantity)), 350, y, 10, { width: 45 });
-    drawText(doc, pdfMoney(item.unitPrice, quote.currency), 408, y, 10, { width: 75 });
-    drawText(doc, pdfMoney(Number(item.quantity) * Number(item.unitPrice), quote.currency), 492, y, 10, { width: 56 });
+    const y = 526 - index * 28;
+    drawText(page, font, truncate(item.description, 45), 62, y, 10, 270);
+    drawText(page, font, String(Number(item.quantity)), 350, y, 10, 45);
+    drawText(page, font, pdfMoney(item.unitPrice, quote.currency), 408, y, 10, 75);
+    drawText(page, font, pdfMoney(Number(item.quantity) * Number(item.unitPrice), quote.currency), 492, y, 10, 56);
   });
 
-  const totalsTop = 330 + visibleItems.length * 28;
-  doc.strokeColor('#bec9db').moveTo(LEFT, totalsTop).lineTo(548, totalsTop).stroke();
-  doc.fillColor('#000000').fontSize(10);
-  drawText(doc, 'Subtotal', 350, totalsTop + 18, 10, { width: 100 });
-  drawText(doc, pdfMoney(subtotal, quote.currency), 458, totalsTop + 18, 10, { width: 90 });
+  const totalsY = 500 - visibleItems.length * 28;
+  page.drawLine({ start: { x: LEFT, y: totalsY + 12 }, end: { x: 548, y: totalsY + 12 }, thickness: 1, color: rgb(0.75, 0.79, 0.86) });
+  drawText(page, font, 'Subtotal', 350, totalsY - 12, 10, 100);
+  drawText(page, font, pdfMoney(subtotal, quote.currency), 458, totalsY - 12, 10, 90);
   if (discount > 0) {
-    drawText(doc, 'Discount', 350, totalsTop + 38, 10, { width: 100 });
-    drawText(doc, `-${pdfMoney(discount, quote.currency)}`, 458, totalsTop + 38, 10, { width: 90 });
+    drawText(page, font, 'Discount', 350, totalsY - 32, 10, 100);
+    drawText(page, font, `-${pdfMoney(discount, quote.currency)}`, 458, totalsY - 32, 10, 90);
   }
   if (Number(quote.taxRate) > 0) {
-    drawText(doc, `Tax (${Number(quote.taxRate)}%)`, 350, totalsTop + 58, 10, { width: 100 });
-    drawText(doc, pdfMoney(tax, quote.currency), 458, totalsTop + 58, 10, { width: 90 });
+    drawText(page, font, `Tax (${Number(quote.taxRate)}%)`, 350, totalsY - 52, 10, 100);
+    drawText(page, font, pdfMoney(tax, quote.currency), 458, totalsY - 52, 10, 90);
   }
-  doc.fillColor('#1a5fe8').fontSize(14);
-  drawText(doc, 'TOTAL', 350, totalsTop + 84, 14, { width: 100 });
-  drawText(doc, pdfMoney(total, quote.currency), 458, totalsTop + 84, 14, { width: 90 });
+  const blue = rgb(0.1, 0.37, 0.92);
+  drawText(page, font, 'TOTAL', 350, totalsY - 78, 14, 100, blue);
+  drawText(page, font, pdfMoney(total, quote.currency), 458, totalsY - 78, 14, 90, blue);
 
-  doc.fontSize(9);
   const noteLines: FlowLine[] = quote.notes
-    ? wrapText(doc, `Notes: ${quote.notes}`, 9, CONTENT_WIDTH).map((value) => ({ value, color: '#d1141e' }))
+    ? wrapText(`Notes: ${quote.notes}`, font, 9, CONTENT_WIDTH).map((value) => ({ value, color: rgb(0.82, 0.08, 0.12) }))
     : [];
   const termLines: FlowLine[] = quote.terms
-    ? wrapText(doc, `Terms: ${quote.terms}`, 9, CONTENT_WIDTH).map((value) => ({ value, color: '#596374' }))
+    ? wrapText(`Terms: ${quote.terms}`, font, 9, CONTENT_WIDTH).map((value) => ({ value, color: muted }))
     : [];
   const flowLines: FlowLine[] = [
     ...noteLines,
-    ...(noteLines.length && termLines.length ? [{ value: '', color: '#000000' }] : []),
+    ...(noteLines.length && termLines.length ? [{ value: '', color: rgb(0, 0, 0) }] : []),
     ...termLines
   ];
-  let flowY = totalsTop + 122;
+  let flowY = totalsY - 116;
 
   for (const line of flowLines) {
-    if (flowY > PAGE_HEIGHT - BOTTOM_MARGIN) flowY = addContinuationPage(doc, quote, logoPath);
-    if (line.value) {
-      doc.fillColor(line.color).fontSize(9);
-      drawText(doc, line.value, LEFT, flowY, 9, { width: CONTENT_WIDTH });
+    if (flowY < BOTTOM_MARGIN) {
+      page = addContinuationPage(document, font, quote, logo);
+      flowY = 700;
     }
-    flowY += 14;
+    if (line.value) drawText(page, font, line.value, LEFT, flowY, 9, CONTENT_WIDTH, line.color);
+    flowY -= 14;
   }
 
-  doc.end();
-  return completed;
+  return Buffer.from(await document.save());
 }
