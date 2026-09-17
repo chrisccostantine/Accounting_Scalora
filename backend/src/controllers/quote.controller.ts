@@ -62,5 +62,5 @@ export async function downloadQuotePdf(req: Request, res: Response) {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('X-Quote-Filename', filename);
-  return res.send(renderQuotePdf(quote));
+  return res.send(await renderQuotePdf(quote));
 }
